@@ -1,0 +1,12 @@
+#!/bin/sh
+
+[  -n "$(uci -q get lucky.@lucky[-1].enable)" ] && exit 0
+touch /etc/config/lucky
+uci -q batch <<-EOF >/dev/null
+	add lucky lucky
+    set lucky.@lucky[-1].enabled=1
+    set lucky.@lucky[-1].logger=1
+    set lucky.@lucky[-1].config=/etc/config/lucky.daji/lucky.conf
+    commit
+EOF
+exit 0
