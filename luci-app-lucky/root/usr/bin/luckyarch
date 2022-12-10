@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 	cputype=$(uname -ms | tr ' ' '_' | tr '[A-Z]' '[a-z]')
 	[ -n "$(echo $cputype | grep -E "linux.*armv.*")" ] && cpucore="armv5"
