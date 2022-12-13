@@ -10,8 +10,8 @@ s = m:section(TypedSection, "lucky", translate("Basic Settings"))
 s.addremove=false
 s.anonymous=true
 
-o=s:option(Flag,"enabled",translate("Enable"))
-o.default=0
+--o=s:option(Flag,"enabled",translate("Enable"))
+--o.default=0
 
 o = s:option( Value, "config", translate("Config file path"),
 	translate("The path to store the config file"))
