@@ -354,6 +354,7 @@
 						FlushLuckyInfo()
 						alert("<%:update success%>")
 						ControllLuckyService("restart")
+						setTimeout('document.location.reload()',2000)
 					} else {
 						alert("<%:update failed%>")
 					}
