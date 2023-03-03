@@ -81,6 +81,7 @@ restart_service() {
 }
 
 stop_service() {
+  pgrep -f $PROG | xargs kill -9 >/dev/null 2>&1
   log_output "lucky is stop."
 }
 
