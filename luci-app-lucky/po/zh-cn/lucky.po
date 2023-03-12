@@ -32,97 +32,97 @@ msgid "Base Setting"
 msgstr "基本设置"
 
 msgid "Not installed"
-msgStr "没有安装"
+msgstr "没有安装"
 
 msgid "Installed"
-msgStr "已安装"
+msgstr "已安装"
 
 msgid "Admin Panel Login HTTP URL"
-msgStr "管理后台登录地址(http)"
+msgstr "管理后台登录地址(http)"
 
 msgid "Lucky Arch"
-msgStr "当前环境CPU架构"
+msgstr "当前环境CPU架构"
 
 msgid "Lucky Status"
-msgStr "Lucky运行状态"
+msgstr "Lucky运行状态"
 
 msgid "Lucky Compilation time"
-msgStr "编译时间"
+msgstr "编译时间"
 
 msgid "Lucky Version"
-msgStr "版本"
+msgstr "版本"
 
 msgid "Admin Panel Login Info"
-msgStr "管理后台登录信息"
+msgstr "管理后台登录信息"
 
 msgid "Account"
-msgStr "账号"
+msgstr "账号"
 
 msgid "Password"
-msgStr "密码"
+msgstr "密码"
 
 msgid "Admin Panel"
-msgStr "Lucky 后台管理"
+msgstr "Lucky 后台管理"
 
 msgid "Open AdminURL"
-msgStr "打开后台管理"
+msgstr "打开后台管理"
 
 msgid "Lucky Admin Http Port"
-msgStr "Lucky 后台HTTP端口"
+msgstr "Lucky 后台HTTP端口"
 
 msgid "Change"
-msgStr "更改"
+msgstr "更改"
 
 msgid "portValueError"
-msgStr "端口值有误"
+msgstr "端口值有误"
 
 msgid "Get Lucky Latest Version"
-msgStr "获取Lucky最新版本"
+msgstr "获取Lucky最新版本"
 
 msgid "get latest version"
-msgStr "查询最新"
+msgstr "查询最新"
 
 msgid "Admin Safe URL"
-msgStr "安全入口"
+msgstr "安全入口"
 
 msgid "DefaultAuth"
-msgStr "默认登录账号密码"
+msgstr "默认登录账号密码"
 
 msgid "Reset 666 as admin account and password?"
-msgStr "重置账号密码为666?"
+msgstr "重置账号密码为666?"
 
 msgid "update success"
-msgStr "修改成功"
+msgstr "修改成功"
 
 msgid "update failed"
-msgStr "修改失败"
+msgstr "修改失败"
 
 msgid "Allow Internet access"
-msgStr "外网登录后台"
+msgstr "外网登录后台"
 
 msgid "Are you sure Enalbe Internetaccess?"
-msgStr "确定要启用外网访问?"
+msgstr "确定要启用外网访问?"
 
 msgid "Are you sure Disable Internetaccess?"
-msgStr "确定要禁用外网访问?"
+msgstr "确定要禁用外网访问?"
 
 msgid "are you sure stop lucky service?"
-msgStr "确定要停止Lucky服务?"
+msgstr "确定要停止Lucky服务?"
 
 msgid "are you sure start lucky service?"
-msgStr "确定要启动Lucky服务?"
+msgstr "确定要启动Lucky服务?"
 
 msgid "Config file path"
-msgStr "配置文件存放位置"
+msgstr "配置文件存放位置"
 
 msgid "The path to store the config file"
-msgStr "存放配置文件的位置"
+msgstr "存放配置文件的位置"
 
 msgid "allow"
-msgStr "允许"
+msgstr "允许"
 
 msgid "not allow"
-msgStr "禁止"
+msgstr "禁止"
 
 msgid "Basic Settings"
-msgStr "基础设置"
+msgstr "基础设置"
