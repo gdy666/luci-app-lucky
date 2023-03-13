@@ -1,6 +1,9 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
+msgid "Main Program"
+msgstr "主程序"
+
 msgid "Lucky"
 msgstr "Lucky"
 
