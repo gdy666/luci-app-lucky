@@ -1,6 +1,6 @@
 #!/bin/sh
 
-[  -n "$(uci -q get lucky.@lucky[-1].enable)" ] && exit 0
+[  -n "$(uci -q get lucky.@lucky[-1].enabled)" ] && exit 0
 touch /etc/config/lucky
 uci -q batch <<-EOF >/dev/null
 	add lucky lucky
