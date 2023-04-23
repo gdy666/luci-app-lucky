@@ -5,6 +5,10 @@ luci-app-lucky lucky分支
 本分支本人自用,仅供参考.
 配置文件架构和https://github.com/sirpdboy/luci-app-lucky 版本可能存在冲突,测试使用前先卸载删除干净之前文件.
 
+最新版本编译好的IPK包请在
+https://url21.ctfile.com/d/44547821-55537427-a5525e?p=16601
+下载
+
 
 
 
