@@ -13,107 +13,56 @@
 	<p id="_luckyAdminLink"></p>
 </fieldset>
 
+
+<style>
+	.cbi-section {
+	  border: 1px solid #ccc;
+	  padding: 10px;
+	}
+	.cbi-section td:first-child {
+	  font-weight: bold;
+	}
+  </style>
+
 <fieldset class="cbi-section">
-	<table width="100%">
-
-
-		<tr>
-			<td width="20%">
-				<%:Main Program%>
-			</td>
-
-			<td width="30%" align="left" id="_luckyInstallStatus">
-				<%:Collecting data...%>
-			</td>
-
-			<td width="20%">
-				<%:Lucky Status%>
-			</td>
-			<td width="30%" align="left" id="_luckyStatus">
-				<%:Collecting data...%>
-			</td>
-
-
-		</tr>
-		<tr>
-			<td width="20%">
-				<%:Lucky Arch%>
-			</td>
-			<td width="30%" align="left" id="_luckyArch">
-				<%:Collecting data...%>
-			</td>
-
-			<td width="20%">
-				<%:Admin Panel %>
-			</td>
-			<td width="30%" align="left" id="_luckyAdminOpen">
-				<%:Collecting data...%>
-			</td>
-
-
-
-
-
-		</tr>
-		<tr>
-			<td width="20%">
-				<%:Lucky Compilation time%>
-			</td>
-
-			<td width="30%" align="left" id="_luckyCompilationTime">
-				<%:Collecting data...%>
-			</td>
-
-
-			<td width="20%">
-				<%:Lucky Admin Http Port%>
-			</td>
-			<td width="30%" align="left" id="_luckyHttpPort">
-				<%:Collecting data...%>
-			</td>
-
-
-
-		</tr>
-
-		<tr>
-			<td width="20%">
-				<%:Lucky Version%>
-			</td>
-			<td width="30%" align="left" id="_luckyVersion">
-				<%:Collecting data...%>
-			</td>
-
-			<td width="20%">
-				<%:Admin Safe URL%>
-			</td>
-			<td width="30%" align="left" id="_luckySafeURL">
-				<%:Collecting data...%>
-			</td>
-
-		</tr>
-
-
-
-		<tr>
-			<td width="25%">
-				<%:Allow Internet access%>
-			</td>
-			<td width="25%" align="left" id="_luckyAllowInternetaccess">
-				<%:Collecting data...%>
-			</td>
-
-			<td width="20%">
-				<%:Admin Panel Login Info%>
-			</td>
-			<td width="30%" align="left" id="_luckyLoginInfo">
-				<%:Collecting data...%>
-			</td>
-
-		</tr>
-
+	<legend><%:Main Program Information%></legend>
+	<table>
+	  <tr>
+		<td><%:Installation Status%></td>
+		<td id="_luckyInstallStatus"><%:Collecting data...%></td>
+	  </tr>
+	  <tr>
+		<td><%:Lucky Status%></td>
+		<td id="_luckyStatus"><%:Collecting data...%></td>
+	  </tr>
+	  <tr>
+		<td><%:Lucky Arch%></td>
+		<td id="_luckyArch"><%:Collecting data...%></td>
+	  </tr>
+	  <tr>
+		<td><%:Compilation Time%></td>
+		<td id="_luckyCompilationTime"><%:Collecting data...%></td>
+	  </tr>
+	  <tr>
+		<td><%:Lucky Version%></td>
+		<td id="_luckyVersion"><%:Collecting data...%></td>
+	  </tr>
 	</table>
-</fieldset>
+  </fieldset>
+  
+  <fieldset class="cbi-section">
+	<legend><%:Admin Panel Information%></legend>
+	<table>
+	  <tr>
+		<td><%:Admin Panel%></td>
+		<td id="_luckyAdminOpen"><%:Collecting data...%></td>
+	  </tr>
+	  <tr>
+		<td><%:Admin Panel Login Info%></td>
+		<td id="_luckyLoginInfo"><%:Collecting data...%></td>
+	  </tr>
+	</table>
+  </fieldset>
 
 
 
@@ -386,7 +335,7 @@
 	}
 
 	function OpenGithub() {
-		winOpen("https://github.com/gdy666/lucky/releases")
+		winOpen("https://url21.ctfile.com/d/44547821-55537427-a5525e?p=16601")
 	}
 
 	function winOpen(url) {

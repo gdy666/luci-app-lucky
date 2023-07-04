@@ -1,5 +1,3 @@
--- Copyright (C) 2021-2022  sirpdboy  <herboy2008@gmail.com> https://github.com/sirpdboy/luci-app-lucky 
--- Licensed to the public under the Apache License 2.0.
 
 module("luci.controller.lucky", package.seeall)
 
@@ -22,7 +20,7 @@ end
 function act_status()
 	local sys  = require "luci.sys"
 	local e = { }
-	e.running = sys.call("pidof lucky >/dev/null") == 0
+	e.running = sys.call("pgrep -f 'lucky -c' >/dev/null") == 0
 	luci.http.prepare_content("application/json")
 	luci.http.write_json(e)
 end
@@ -112,11 +110,6 @@ function lucky_service()
 		luci.sys.exec("/etc/init.d/lucky stop")
 	end
 
-	-- local e = { }
-	-- e.fuck= action
-	-- luci.http.prepare_content("application/json")
-	-- luci.http.write_json(e) 
-
 end
 
 
@@ -127,11 +120,8 @@ end
 
 function GetLuckyConfigureObj()
 	configPath = trim(luci.sys.exec("uci get lucky.@lucky[0].config"))
-	local configContent = nixio.fs.readfile(configPath)
-	if (configContent==nil)
-	then
-		return nil
-	end
+	local configContent = luci.sys.exec("lucky -baseConfInfo -c "..configPath)
+
 	configObj = luci.jsonc.parse(trim(configContent))
 	return configObj
 end
@@ -141,11 +131,15 @@ end
 function setLuckyConf(key,value)
 	configPath = trim(luci.sys.exec("uci get lucky.@lucky[0].config"))
 
-	cmd = "/usr/bin/lucky -c "..configPath.." -setconf ".."-key "..key.." -value "..value
+	cmd = "/usr/bin/lucky ".." -setconf ".."-key "..key.." -value "..value.." -c "..configPath
 	if (value=="")
 	then
-		cmd = "/usr/bin/lucky -c "..configPath.." -setconf ".."-key "..key
+		cmd = "/usr/bin/lucky ".." -setconf ".."-key "..key.." -c "..configPath
 	end
 
-	return luci.sys.call(cmd)
+
+	luci.sys.exec(cmd)
+	luci.sys.exec("/etc/init.d/lucky restart")
+
+	return 0
 end

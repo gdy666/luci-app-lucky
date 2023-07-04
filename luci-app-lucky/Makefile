@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
-# Copyright (C) 2021-2022  sirpdboy  <herboy2008@gmail.com> https://github.com/sirpdboy/luci-app-lucky
+# Copyright (C) 2022-2023  gdy  
 # 
 # This is free software, licensed under the Apache License, Version 2.0 .
 #
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-lucky
-PKG_VERSION:=1.2.3
-PKG_RELEASE:=8
+PKG_VERSION:=2.0.1
+PKG_RELEASE:=1
 
 LUCI_TITLE:=LuCI Support for  lucky 
 #LUCI_DEPENDS:=+lucky

@@ -21,7 +21,7 @@ UCI_CONF=/etc/config/lucky
 get_config() {
   config_get_bool enabled $1 enabled 0
 	config_get_bool logger $1 logger 1
-  config_get PRO_CONF $1 config $DEFAULT_PRO_CONF
+  config_get PRO_CONF $1 configdir $DEFAULT_PRO_CONF
 }
 
 init_config_params(){
@@ -55,13 +55,13 @@ lucky_run(){
       [ x$enabled == x1 ] || return 1
       procd_open_instance
       procd_set_param respawn
-      procd_set_param command $PROG -c "$PRO_CONF"
+      procd_set_param command $PROG -cd "$PRO_CONF"
       procd_close_instance
     else
       init_conf_dir #未安装luci的uci，使用默认文件夹，若不存在，创建
       procd_open_instance
       procd_set_param respawn
-      procd_set_param command $PROG -c "$PRO_CONF"
+      procd_set_param command $PROG -cd "$PRO_CONF"
       procd_close_instance
 	fi
   log_output "lucky is start."

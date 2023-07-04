@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
-# Copyright (C) 2021-2022  sirpdboy  <herboy2008@gmail.com>
-# 
-# This is free software, licensed under the Apache License, Version 2.0 .
-#
 
 include $(TOPDIR)/rules.mk
 

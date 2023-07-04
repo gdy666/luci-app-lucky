@@ -4,6 +4,21 @@ msgstr "Content-Type: text/plain; charset=UTF-8"
 msgid "Main Program"
 msgstr "主程序"
 
+msgid "Main Program Information"
+msgstr "主程序信息"
+
+msgid "Installation Status"
+msgstr "安装状态"
+
+msgid "Compilation Time"
+msgstr "编译时间"
+
+msgid "Admin Panel Information"
+msgstr "管理面板信息"
+
+msgid "Config dir path"
+msgstr "配置文件夹位置"
+
 msgid "Lucky"
 msgstr "Lucky"
 
