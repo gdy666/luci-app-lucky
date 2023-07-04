@@ -119,8 +119,8 @@ end
 
 
 function GetLuckyConfigureObj()
-	configPath = trim(luci.sys.exec("uci get lucky.@lucky[0].config"))
-	local configContent = luci.sys.exec("lucky -baseConfInfo -c "..configPath)
+	configPath = trim(luci.sys.exec("uci get lucky.@lucky[0].configdir"))
+	local configContent = luci.sys.exec("lucky -baseConfInfo -cd "..configPath)
 
 	configObj = luci.jsonc.parse(trim(configContent))
 	return configObj
@@ -129,12 +129,12 @@ end
 
 
 function setLuckyConf(key,value)
-	configPath = trim(luci.sys.exec("uci get lucky.@lucky[0].config"))
+	configPath = trim(luci.sys.exec("uci get lucky.@lucky[0].configdir"))
 
 	cmd = "/usr/bin/lucky ".." -setconf ".."-key "..key.." -value "..value.." -c "..configPath
 	if (value=="")
 	then
-		cmd = "/usr/bin/lucky ".." -setconf ".."-key "..key.." -c "..configPath
+		cmd = "/usr/bin/lucky ".." -setconf ".."-key "..key.." -cd "..configPath
 	end
 
 
