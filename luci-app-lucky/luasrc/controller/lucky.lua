@@ -72,7 +72,9 @@ function lucky_set_config()
 	if(key=="reset_auth_info")
 	then
 		setLuckyConf("AdminAccount","666")
-		e.ret =setLuckyConf("AdminPassword","666")
+		setLuckyConf("AdminPassword","666")
+		luci.sys.exec("/etc/init.d/lucky restart")
+		e.ret=0
 	end
 	if(key=="switch_Internetaccess")
 	then
@@ -131,7 +133,7 @@ end
 function setLuckyConf(key,value)
 	configPath = trim(luci.sys.exec("uci get lucky.@lucky[0].configdir"))
 
-	cmd = "/usr/bin/lucky ".." -setconf ".."-key "..key.." -value "..value.." -c "..configPath
+	cmd = "/usr/bin/lucky ".." -setconf ".."-key "..key.." -value "..value.." -cd "..configPath
 	if (value=="")
 	then
 		cmd = "/usr/bin/lucky ".." -setconf ".."-key "..key.." -cd "..configPath
@@ -139,7 +141,7 @@ function setLuckyConf(key,value)
 
 
 	luci.sys.exec(cmd)
-	luci.sys.exec("/etc/init.d/lucky restart")
+	
 
 	return 0
 end
