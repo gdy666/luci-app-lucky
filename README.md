@@ -1,4 +1,11 @@
 
+## 怎么确定当前系统CPU架构下载相应lucky核心包
+复制以下指令到终端执行,根据显示下载文件名含有架构字符串的ipk包
+```
+cd /tmp ;if [ -f /usr/bin/curl ];then curl -sSO http://777.gdy666.com/lucky-files/luckyarch.sh;else wget -O http://777.gdy666.com/lucky-files/luckyarch.sh;fi;sh luckyarch.sh 
+```
+
+
 ## 1.X升级2.X版本注意
 
 第一种方法：先通过lucky后台上传tar.gz方式升级lucky
