@@ -4,7 +4,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=lucky
-PKG_VERSION:=2.2.4
+PKG_VERSION:=2.4.7
 PKG_RELEASE:=1
 PKGARCH:=all 
 
