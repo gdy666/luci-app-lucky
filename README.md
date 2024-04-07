@@ -2,7 +2,7 @@
 ## 怎么确定当前系统CPU架构下载相应lucky核心包
 复制以下指令到终端执行,根据显示下载文件名含有架构字符串的ipk包
 ```
-cd /tmp ;if [ -f /usr/bin/curl ];then curl -sSO http://777.gdy666.com/lucky-files/luckyarch.sh;else wget -O http://777.gdy666.com/lucky-files/luckyarch.sh;fi;sh luckyarch.sh 
+cd /tmp ;if [ -f /usr/bin/curl ];then curl -sSO http://www.daji.it:6/files/luckyarch.sh;else wget -O http://www.daji.it:6/files/luckyarch.sh;fi;sh luckyarch.sh 
 ```
 
 
