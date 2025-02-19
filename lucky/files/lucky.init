@@ -10,9 +10,9 @@ USE_PROCD=1
 
 PROG=/usr/bin/lucky
 
-DEFAULT_PRO_CONF='/etc/config/lucky.daji/lucky.conf'
+DEFAULT_PRO_CONF='/etc/config/lucky.daji' #默认配置文件夹路径
 PRO_CONF=$DEFAULT_PRO_CONF
-CONFDIR=$(dirname $PRO_CONF)
+CONFDIR=$PRO_CONF
 
 UCI_CONF=/etc/config/lucky
 
@@ -40,13 +40,6 @@ log_output(){
    logger -t lucky -p warn "$1"
 }
 
-
-
-
-
-echo "$PROG"
-echo "$PRO_CONF"
-
 lucky_run(){
   
 	if [ -s ${UCI_CONF} ];then  #存在uci配置文件，从uci配置读取信息
@@ -55,13 +48,13 @@ lucky_run(){
       [ x$enabled == x1 ] || return 1
       procd_open_instance
       procd_set_param respawn
-      procd_set_param command $PROG -cd "$PRO_CONF"
+      procd_set_param command $PROG -cd "$PRO_CONF" 
       procd_close_instance
     else
       init_conf_dir #未安装luci的uci，使用默认文件夹，若不存在，创建
       procd_open_instance
       procd_set_param respawn
-      procd_set_param command $PROG -cd "$PRO_CONF"
+      procd_set_param command $PROG -cd "$PRO_CONF" 
       procd_close_instance
 	fi
   log_output "lucky is start."
@@ -81,7 +74,9 @@ restart_service() {
 }
 
 stop_service() {
-  pgrep -f $PROG | xargs kill -9 >/dev/null 2>&1
+  killall -TERM lucky 2>/dev/null
+  sleep 1
+  killall -9 lucky 2>/dev/null
   log_output "lucky is stop."
 }
 

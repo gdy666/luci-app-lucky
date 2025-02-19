@@ -5,8 +5,10 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=lucky
 PKG_VERSION:=2.15.7
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 PKGARCH:=all 
+LUCKY_CONF_DIR := /etc/config/lucky.daji
+LUCKY_TMP_BACKUP := /tmp/luckyconfdir
 
 ifeq ($(ARCH),mipsel)
 	LUCKY_ARCH:=mipsle_softfloat
@@ -21,7 +23,11 @@ ifeq ($(ARCH),x86_64)
 	LUCKY_ARCH:=x86_64
 endif
 ifeq ($(ARCH),arm)
-	LUCKY_ARCH:=armv7
+	ifeq ($(BOARD),bcm53xx)
+		LUCKY_ARCH:=armv6
+	else
+		LUCKY_ARCH:=armv7
+	endif
 endif
 ifeq ($(BOARD),bcm53xx)
 	LUCKY_ARCH:=armv6
@@ -58,41 +64,49 @@ define Package/$(PKG_NAME)/description
 endef
 
 
-define Package/$(PKG_NAME)/preinst
-#!/bin/sh
-[ ! -f /etc/config/lucky.daji/lucky.conf ] && exit 0
-cp /etc/config/lucky.daji/lucky.conf /tmp/lucky.conf
-endef
 
-
-define Package/$(PKG_NAME)/postinst
-#!/bin/sh
-[ ! -f /tmp/lucky.conf ] && exit 0
-mv /tmp/lucky.conf /etc/config/lucky.daji/lucky.conf
-endef
-
-define Package/{package-name}/postrm
-#!/bin/sh
-rm -rf /etc/config/lucky.daji
-endef 
 
 define Build/Prepare
 	[ ! -f $(PKG_BUILD_DIR)/$(PKG_NAME)_$(PKG_VERSION)_Linux_$(LUCKY_ARCH).tar.gz ] && wget https://github.com/gdy666/lucky/releases/download/v$(PKG_VERSION)/$(PKG_NAME)_$(PKG_VERSION)_Linux_$(LUCKY_ARCH).tar.gz -O $(PKG_BUILD_DIR)/$(PKG_NAME)_$(PKG_VERSION)_Linux_$(LUCKY_ARCH).tar.gz
 	tar -xzvf $(PKG_BUILD_DIR)/$(PKG_NAME)_$(PKG_VERSION)_Linux_$(LUCKY_ARCH).tar.gz -C $(PKG_BUILD_DIR)
 endef
 
-define Build/Configure
-
+define Package/$(PKG_NAME)/preinst
+#!/bin/sh
+mkdir -p $(LUCKY_TMP_BACKUP)
+if [ -d $(LUCKY_CONF_DIR) ]; then
+    cp -a $(LUCKY_CONF_DIR)/. $(LUCKY_TMP_BACKUP)/
+else
+    mkdir -p $(LUCKY_CONF_DIR)
+    chmod 755 $(LUCKY_CONF_DIR)
+fi
 endef
 
-define Build/Compile
+define Package/$(PKG_NAME)/postinst
+#!/bin/sh
+if [ -n "$(ls -A $(LUCKY_TMP_BACKUP))" ]; then
+    mkdir -p $(LUCKY_CONF_DIR)
+    cp -a $(LUCKY_TMP_BACKUP)/. $(LUCKY_CONF_DIR)/
+fi
+rm -rf $(LUCKY_TMP_BACKUP)
+endef
+
+define Package/$(PKG_NAME)/postrm
+#!/bin/sh
+# 仅尝试移除空目录，保留用户配置
+rmdir $(LUCKY_CONF_DIR) 2>/dev/null || true
+endef 
+
+define Package/$(PKG_NAME)/conffiles
+/etc/config/lucky.daji/
 endef
 
 define Package/$(PKG_NAME)/install
-	$(INSTALL_DIR) $(1)/usr/bin $(1)/etc/init.d $(1)/etc/config/lucky.daji
+	$(INSTALL_DIR) $(1)/usr/bin/
+	$(INSTALL_DIR) $(1)/etc/init.d/
+	$(INSTALL_DIR) $(1)$(LUCKY_CONF_DIR)/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lucky $(1)/usr/bin/lucky
 	$(INSTALL_BIN) ./files/lucky.init $(1)/etc/init.d/lucky
-	$(INSTALL_DATA) ./files/default.conf $(1)/etc/config/lucky.daji/lucky.conf
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
