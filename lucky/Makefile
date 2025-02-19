@@ -7,7 +7,7 @@ PKG_NAME:=lucky
 PKG_VERSION:=2.15.7
 PKG_RELEASE:=2
 PKGARCH:=all 
-LUCKY_CONF_DIR := /etc/config/lucky.daji
+LUCKY_CONF_DIR := /etc/lucky
 LUCKY_TMP_BACKUP := /tmp/luckyconfdir
 
 ifeq ($(ARCH),mipsel)
@@ -96,6 +96,9 @@ define Package/$(PKG_NAME)/postrm
 # 仅尝试移除空目录，保留用户配置
 rmdir $(LUCKY_CONF_DIR) 2>/dev/null || true
 endef 
+
+define Build/Compile
+endef
 
 define Package/$(PKG_NAME)/conffiles
 /etc/config/lucky.daji/
