@@ -7,7 +7,7 @@ PKG_NAME:=lucky
 PKG_VERSION:=2.15.7
 PKG_RELEASE:=2
 PKGARCH:=all 
-LUCKY_CONF_DIR := /etc/lucky
+LUCKY_CONF_DIR := /etc/config/lucky.daji
 LUCKY_TMP_BACKUP := /tmp/luckyconfdir
 
 ifeq ($(ARCH),mipsel)
