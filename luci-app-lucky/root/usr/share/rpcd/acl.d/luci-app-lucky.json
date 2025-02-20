@@ -1,11 +1,17 @@
 {
-	"luci-app-lucky": {
-		"description": "Grant UCI access for luci-app-lucky",
-		"read": {
-			"uci": [ "lucky" ]
-		},
-		"write": {
-			"uci": [ "lucky" ]
-		}
-	}
+    "luci-app-lucky": {
+        "description": "Grant access to Lucky interface",
+        "read": {
+            "ubus": {
+                "uci": ["get"]
+            },
+            "uci": ["lucky"]
+        },
+        "write": {
+            "ubus": {
+                "uci": ["set"]
+            },
+            "uci": ["lucky"]
+        }
+    }
 }

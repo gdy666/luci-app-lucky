@@ -74,9 +74,7 @@ restart_service() {
 }
 
 stop_service() {
-  killall -TERM lucky 2>/dev/null
-  sleep 1
-  killall -9 lucky 2>/dev/null
+  pgrep -f $PROG | xargs kill -9 >/dev/null 2>&1
   log_output "lucky is stop."
 }
 

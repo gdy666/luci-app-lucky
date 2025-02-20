@@ -5,7 +5,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=lucky
 PKG_VERSION:=2.15.7
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKGARCH:=all 
 LUCKY_CONF_DIR := /etc/config/lucky.daji
 LUCKY_TMP_BACKUP := /tmp/luckyconfdir
@@ -97,11 +97,11 @@ define Package/$(PKG_NAME)/postrm
 rmdir $(LUCKY_CONF_DIR) 2>/dev/null || true
 endef 
 
-define Build/Compile
-endef
-
 define Package/$(PKG_NAME)/conffiles
 /etc/config/lucky.daji/
+endef
+
+define Build/Compile
 endef
 
 define Package/$(PKG_NAME)/install
