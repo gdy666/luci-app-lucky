@@ -71,25 +71,25 @@ define Build/Prepare
 	tar -xzvf $(PKG_BUILD_DIR)/$(PKG_NAME)_$(PKG_VERSION)_Linux_$(LUCKY_ARCH).tar.gz -C $(PKG_BUILD_DIR)
 endef
 
-define Package/$(PKG_NAME)/preinst
-#!/bin/sh
-mkdir -p $(LUCKY_TMP_BACKUP)
-if [ -d $(LUCKY_CONF_DIR) ]; then
-    cp -a $(LUCKY_CONF_DIR)/. $(LUCKY_TMP_BACKUP)/
-else
-    mkdir -p $(LUCKY_CONF_DIR)
-    chmod 755 $(LUCKY_CONF_DIR)
-fi
-endef
+# define Package/$(PKG_NAME)/preinst
+# #!/bin/sh
+# mkdir -p $(LUCKY_TMP_BACKUP)
+# if [ -d $(LUCKY_CONF_DIR) ]; then
+#     cp -a $(LUCKY_CONF_DIR)/. $(LUCKY_TMP_BACKUP)/
+# else
+#     mkdir -p $(LUCKY_CONF_DIR)
+#     chmod 755 $(LUCKY_CONF_DIR)
+# fi
+# endef
 
-define Package/$(PKG_NAME)/postinst
-#!/bin/sh
-if [ -n "$(ls -A $(LUCKY_TMP_BACKUP))" ]; then
-    mkdir -p $(LUCKY_CONF_DIR)
-    cp -a $(LUCKY_TMP_BACKUP)/. $(LUCKY_CONF_DIR)/
-fi
-rm -rf $(LUCKY_TMP_BACKUP)
-endef
+# define Package/$(PKG_NAME)/postinst
+# #!/bin/sh
+# if [ -n "$(ls -A $(LUCKY_TMP_BACKUP))" ]; then
+#     mkdir -p $(LUCKY_CONF_DIR)
+#     cp -a $(LUCKY_TMP_BACKUP)/. $(LUCKY_CONF_DIR)/
+# fi
+# rm -rf $(LUCKY_TMP_BACKUP)
+# endef
 
 define Package/$(PKG_NAME)/postrm
 #!/bin/sh
