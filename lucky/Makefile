@@ -5,7 +5,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=lucky
 PKG_VERSION:=2.15.7
-PKG_RELEASE:=9
+PKG_RELEASE:=12
 PKGARCH:=all 
 LUCKY_CONF_DIR := /etc/config/lucky.daji
 LUCKY_TMP_BACKUP := /tmp/luckyconfdir
@@ -71,14 +71,10 @@ define Build/Prepare
 	tar -xzvf $(PKG_BUILD_DIR)/$(PKG_NAME)_$(PKG_VERSION)_Linux_$(LUCKY_ARCH).tar.gz -C $(PKG_BUILD_DIR)
 endef
 
-define Package/$(PKG_NAME)/postrm
-#!/bin/sh
-# 仅尝试移除空目录，保留用户配置
-rmdir $(LUCKY_CONF_DIR) 2>/dev/null || true
-endef 
+
 
 define Package/$(PKG_NAME)/conffiles
-/etc/config/lucky.daji/
+/etc/config/lucky
 endef
 
 define Build/Compile
@@ -87,22 +83,12 @@ endef
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/etc/init.d/
-	$(INSTALL_DIR) $(1)$(LUCKY_CONF_DIR)/
+	$(INSTALL_DIR) $(1)/etc/config/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lucky $(1)/usr/bin/lucky
 	$(INSTALL_BIN) ./files/lucky.init $(1)/etc/init.d/lucky
-
-	# Install to a temporary location
-	$(INSTALL_CONF) $(CURDIR)/files/luckyuci $(1)/etc/config/lucky.default
+	$(INSTALL_CONF) $(CURDIR)/files/luckyuci $(1)/etc/config/lucky
 endef
 
-define Package/$(PKG_NAME)/postinst
-#!/bin/sh
-# Copy default config if it doesn't exist
-if [ ! -f /etc/config/lucky ]; then
-	mv /etc/config/lucky.default /etc/config/lucky
-fi
-rm -f /etc/config/lucky.default
-exit 0
-endef
+
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
