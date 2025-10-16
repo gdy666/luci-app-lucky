@@ -3,8 +3,8 @@
         "title": "Lucky",
         "order": 60,
         "action": {
-            "type": "view",
-            "path": "lucky"
+            "type": "firstchild",
+            "preferred": "setting"
         },
         "depends": {
             "acl": ["luci-app-lucky"],
