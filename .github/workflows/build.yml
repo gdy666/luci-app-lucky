@@ -1,0 +1,119 @@
+name: Build packages
+
+on:
+  push:
+    branches:
+      - main
+      - v3
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install static-check dependencies
+        run: sudo apt-get update && sudo apt-get install -y gettext
+      - name: Validate source files
+        shell: bash
+        run: |
+          set -eu
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.11.0
+          "$(go env GOPATH)/bin/shfmt" -d -sr -s \
+            lucky/files/lucky.init lucky/files/lucky-call scripts/build-sdk.sh
+          sh -n lucky/files/lucky.init
+          sh -n lucky/files/lucky-call
+          bash -n scripts/build-sdk.sh
+          node -e "const fs=require('fs'); for (const f of process.argv.slice(1)) JSON.parse(fs.readFileSync(f));" \
+            luci-app-lucky/root/usr/share/luci/menu.d/luci-app-lucky.json \
+            luci-app-lucky/root/usr/share/rpcd/acl.d/luci-app-lucky.json
+          node -e "new Function(require('fs').readFileSync(process.argv[1], 'utf8'));" \
+            luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js
+          msgfmt --check --check-compatibility -o /dev/null luci-app-lucky/po/zh_Hans/lucky.po
+          python3 scripts/check-po.py luci-app-lucky/po/zh_Hans/lucky.po \
+            luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js
+          python3 scripts/check-build-matrix.py scripts/build-matrix.json
+          python3 scripts/check-hashes.py lucky/Makefile --verify-remote
+
+  build:
+    needs: static-checks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk:
+          - x86_64-25.12.5
+          - aarch64_cortex-a53-25.12.5
+          - x86_64-24.10.8
+          - x86_64-23.05.6
+          - x86_64-22.03.7
+          - x86_64-21.02.7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build with the official OpenWrt SDK action
+        uses: openwrt/gh-action-sdk@f5813d30eeef3534b58ac7e79c5d8842b6035434 # main, pinned 2026-08-09
+        env:
+          ARCH: ${{ matrix.sdk }}
+          BUILD_LOG: 1
+          PACKAGES: lucky luci-app-lucky
+      - name: Upload packages and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-${{ matrix.sdk }}
+          if-no-files-found: warn
+          path: |
+            bin/packages/**/*.ipk
+            bin/packages/**/*.apk
+            logs/**
+
+  legacy-19-07:
+    needs: static-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with the official OpenWrt 19.07.10 SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sdk_archive=openwrt-sdk-19.07.10-x86-64_gcc-7.5.0_musl.Linux-x86_64.tar.xz
+          sdk_url=https://downloads.openwrt.org/releases/19.07.10/targets/x86/64/$sdk_archive
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 --output "$sdk_archive" "$sdk_url"
+          echo "db05bea54331b1f7c88033af3ae162359179132e7f52168f32651c5330abd2f5  $sdk_archive" | sha256sum -c
+          tar -xf "$sdk_archive"
+          sdk_dir="$(find "$RUNNER_TEMP" -maxdepth 1 -type d -name 'openwrt-sdk-19.07.10-*' -print -quit)"
+          # 19.07 checks for Python 2 and its host tools predate the current default C dialect.
+          OPENWRT_FORCE=1 bash "$GITHUB_WORKSPACE/scripts/build-sdk.sh" "$sdk_dir" "$GITHUB_WORKSPACE"
+          cd "$sdk_dir"
+          core_ipk="$(find bin/packages -type f -name 'lucky_*.ipk' -print -quit)"
+          luci_ipk="$(find bin/packages -type f -name 'luci-app-lucky_*.ipk' -print -quit)"
+          test -n "$core_ipk" && test -n "$luci_ipk"
+          core_files="$(tar -xzOf "$core_ipk" ./data.tar.gz | tar -tzf -)"
+          grep -qx './usr/bin/lucky' <<<"$core_files"
+          grep -qx './usr/libexec/lucky-call' <<<"$core_files"
+          luci_files="$(tar -xzOf "$luci_ipk" ./data.tar.gz | tar -tzf -)"
+          grep -qx './usr/lib/lua/luci/controller/lucky.lua' <<<"$luci_files"
+          grep -qx './www/luci-static/resources/view/lucky/config.js' <<<"$luci_files"
+          grep -qx './usr/share/luci/menu.d/luci-app-lucky.json' <<<"$luci_files"
+          grep -qx './usr/share/rpcd/acl.d/luci-app-lucky.json' <<<"$luci_files"
+          control="$(tar -xzOf "$luci_ipk" ./control.tar.gz | tar -xzO ./control)"
+          grep -q 'luci-compat' <<<"$control"
+          grep -q 'rpcd-mod-file' <<<"$control"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts-19.07"
+          find bin/packages -type f -name '*lucky*.ipk' -exec cp -v '{}' "$GITHUB_WORKSPACE/artifacts-19.07/" ';'
+      - name: Upload 19.07 packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-x86_64-19.07.10
+          if-no-files-found: warn
+          path: |
+            artifacts-19.07/*.ipk
+            ${{ runner.temp }}/openwrt-sdk-19.07.10-*/logs/**

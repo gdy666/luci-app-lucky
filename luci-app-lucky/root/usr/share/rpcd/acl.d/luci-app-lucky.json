@@ -1,13 +1,26 @@
 {
 	"luci-app-lucky": {
-		"description": "Grant UCI access for luci-app-lucky",
+		"description": "Grant access to the Lucky administration page",
 		"read": {
-			"ubus": {
-				"service": [ "list" ]
+			"file": {
+				"/usr/libexec/lucky-call info": [ "exec" ],
+				"/usr/libexec/lucky-call base": [ "exec" ],
+				"/usr/libexec/lucky-call status": [ "exec" ],
+				"/usr/libexec/lucky-call arch": [ "exec" ]
 			},
 			"uci": [ "lucky" ]
 		},
 		"write": {
+			"file": {
+				"/usr/libexec/lucky-call service start": [ "exec" ],
+				"/usr/libexec/lucky-call service stop": [ "exec" ],
+				"/usr/libexec/lucky-call service restart": [ "exec" ],
+				"/usr/libexec/lucky-call set-port *": [ "exec" ],
+				"/usr/libexec/lucky-call set-safe-url *": [ "exec" ],
+				"/usr/libexec/lucky-call set-internet true": [ "exec" ],
+				"/usr/libexec/lucky-call set-internet false": [ "exec" ],
+				"/usr/libexec/lucky-call reset-auth": [ "exec" ]
+			},
 			"uci": [ "lucky" ]
 		}
 	}

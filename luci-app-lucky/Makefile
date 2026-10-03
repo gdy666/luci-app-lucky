@@ -1,27 +1,21 @@
-# SPDX-License-Identifier: GPL-3.0-only
-#
-# Copyright (C) 2022-2023  gdy  
-# 
-# This is free software, licensed under the Apache License, Version 2.0 .
-#
+# SPDX-License-Identifier: Apache-2.0
+
 include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/version.mk
 
 PKG_NAME:=luci-app-lucky
-PKG_VERSION:=2.2.2
+PKG_VERSION:=3.0.0
 PKG_RELEASE:=1
 
-LUCI_TITLE:=LuCI Support for  lucky 
-LUCI_DEPENDS:=+lucky +luci-compat
+LUCI_TITLE:=LuCI support for Lucky
+LUCI_DESCRIPTION:=Manage the Lucky service and its basic web settings.
+LUCI_DEPENDS:=+lucky +rpcd-mod-file
 LUCI_PKGARCH:=all
 
-
-define Package/$(PKG_NAME)/install
-	$(INSTALL_BIN) ./root/usr/bin/luckyarch $(1)/usr/bin/luckyarch
-endef
+ifneq ($(filter 19.07%,$(VERSION_NUMBER)),)
+  LUCI_DEPENDS+=+luci-compat
+endif
 
 include $(TOPDIR)/feeds/luci/luci.mk
-
-
-
 
 # call BuildPackage - OpenWrt buildroot signature

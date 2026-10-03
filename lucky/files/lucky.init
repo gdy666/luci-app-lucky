@@ -1,81 +1,56 @@
 #!/bin/sh /etc/rc.common
-#
-#
-
+# SPDX-License-Identifier: MIT
 
 START=99
 STOP=15
 USE_PROCD=1
 
-
 PROG=/usr/bin/lucky
+DEFAULT_CONFIG_DIR=/etc/config/lucky.daji
 
-DEFAULT_PRO_CONF='/etc/config/lucky.daji/' #默认配置文件夹路径
-PRO_CONF=$DEFAULT_PRO_CONF
-CONFDIR=$PRO_CONF
-
-UCI_CONF=/etc/config/lucky
-
-
-
-get_config() {
-  config_get_bool enabled $1 enabled 0
-	config_get_bool logger $1 logger 1
-  config_get PRO_CONF $1 configdir $DEFAULT_PRO_CONF
+validate_config_dir() {
+	local newline
+	newline='
+'
+	case "$1" in
+	*"$newline"* | //* | / | /proc | /proc/* | /sys | /sys/* | /dev | /dev/* | /run | /run/* | */../* | */.. | */./* | */.) ;;
+	/*) return 0 ;;
+	*) ;;
+	esac
+	logger -t lucky -p daemon.err "Rejected unsafe config directory: $1"
+	return 1
 }
 
-init_config_params(){
-  	config_load lucky
-    config_foreach get_config
-    CONFDIR=$PRO_CONF
+start_instance() {
+	local section="$1"
+	local enabled config_dir logger_enabled
+
+	config_get_bool enabled "$section" enabled 0
+	[ "$enabled" -eq 1 ] || return 0
+
+	config_get config_dir "$section" configdir "$DEFAULT_CONFIG_DIR"
+	config_get_bool logger_enabled "$section" logger 1
+	validate_config_dir "$config_dir" || return 1
+	umask 077
+	mkdir -p "$config_dir" || return 1
+
+	procd_open_instance "$section"
+	procd_set_param command "$PROG" -cd "$config_dir"
+	procd_set_param respawn 3600 5 5
+	procd_set_param stderr 1
+	[ "$logger_enabled" -eq 1 ] && procd_set_param stdout 1
+	procd_set_param file /etc/config/lucky
+	procd_close_instance
 }
-
-
-init_conf_dir(){
-	[ -d $CONFDIR ] || mkdir -p $CONFDIR 2>/dev/null
-}
-
-log_output(){
-   echo "$1"
-   logger -t lucky -p warn "$1"
-}
-
-lucky_run(){
-  
-  
-	if [ -s ${UCI_CONF} ];then  #存在uci配置文件，从uci配置读取信息
-      init_config_params 
-      [  x$enabled = x1 ] || return 1
-	fi
-
-    init_conf_dir
-    procd_open_instance
-    procd_set_param command $PROG 
-    procd_append_param command -cd "$CONFDIR" 
-    procd_set_param respawn
-    procd_set_param stderr 1
-    procd_close_instance
-
-
-  log_output "lucky is start."
-
-}
-
-
-
 
 start_service() {
-  lucky_run
+	config_load lucky
+	config_foreach start_instance lucky
 }
 
-restart_service() {
-  stop_service
-  start_service
-}
-
-stop_service() {
-  pgrep -f $PROG | xargs kill -9 >/dev/null 2>&1
-  log_output "lucky is stop."
+reload_service() {
+	stop
+	start
 }
 
 service_triggers() {

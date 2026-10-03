@@ -1,146 +1,158 @@
 msgid ""
-msgstr "Content-Type: text/plain; charset=UTF-8"
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
 
-msgid "Main Program"
-msgstr "主程序"
+msgid "Admin access policy"
+msgstr "管理后台访问策略"
 
-msgid "Main Program Information"
-msgstr "主程序信息"
+msgid "Admin access policy updated. Restart Lucky to apply it."
+msgstr "管理后台访问策略已更新，重启 Lucky 后生效。"
 
-msgid "Installation Status"
+msgid "Admin credentials reset"
+msgstr "管理凭据已重置"
+
+msgid "Admin HTTP port"
+msgstr "管理后台 HTTP 端口"
+
+msgid "Admin panel"
+msgstr "管理后台"
+
+msgid "Admin port updated. Restart Lucky to apply it."
+msgstr "管理端口已更新，重启 Lucky 后生效。"
+
+msgid "Admin safe URL"
+msgstr "管理后台安全入口"
+
+msgid "Admin safe URL updated. Restart Lucky to apply it."
+msgstr "安全入口已更新，重启 Lucky 后生效。"
+
+msgid "Allow Internet access to the admin panel"
+msgstr "允许从互联网访问管理后台"
+
+msgid "Allowed"
+msgstr "允许"
+
+msgid "Account:"
+msgstr "账号："
+
+msgid "Are you sure you want to perform this service action?"
+msgstr "确定要执行此服务操作吗？"
+
+msgid "Available when the service is running"
+msgstr "服务运行后可访问"
+
+msgid "Build date"
+msgstr "构建日期"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "Collecting data…"
+msgstr "正在获取数据…"
+
+msgid "Refresh"
+msgstr "刷新"
+
+msgid "Refreshing…"
+msgstr "刷新中…"
+
+msgid "Configuration directory"
+msgstr "配置目录"
+
+msgid "Enter a port from 1 to 65535."
+msgstr "请输入 1 到 65535 之间的端口。"
+
+msgid "Exposing the admin panel to the Internet increases risk. Continue?"
+msgstr "将管理后台暴露到互联网会增加安全风险，是否继续？"
+
+msgid "Installation status"
 msgstr "安装状态"
-
-msgid "Compilation Time"
-msgstr "编译时间"
-
-msgid "Admin Panel Information"
-msgstr "管理面板信息"
-
-msgid "Config dir path"
-msgstr "配置文件夹位置"
-
-msgid "Lucky"
-msgstr "Lucky"
-
-msgid "ipv4/ipv6 portforward,ddns,reverseproxy proxy,wake on lan,IOT and more..."
-msgstr "IPv4/IPv6端口转发,动态域名服务,http/https反向代理，网络唤醒(可通过第三方物联网平台接入各大语音助手实现语音控制开关电脑)"
-
-msgid "Running state"
-msgstr "运行状态"
-
-msgid "The Lucky service is running."
-msgstr "已启动"
-
-msgid "The Lucky service is not running."
-msgstr "未启动"
-
-msgid "Lucky Status"
-msgstr "Lucky服务状态"
-
-msgid "Collecting data..."
-msgstr "收集数据..."
-
-msgid "Set the Lucky access port"
-msgstr "设置访问端口"
-
-msgid "</br>For specific usage, see:"
-msgstr "</br>具体使用方法参见："
-
-msgid "Base Setting"
-msgstr "基本设置"
-
-msgid "Not installed"
-msgstr "没有安装"
 
 msgid "Installed"
 msgstr "已安装"
 
-msgid "Admin Panel Login HTTP URL"
-msgstr "管理后台登录地址(http)"
+msgid "Internet access was disabled before the credentials were changed."
+msgstr "修改凭据前已自动关闭互联网访问。"
 
-msgid "Lucky Arch"
-msgstr "当前环境CPU架构"
+msgid "Invalid response from %s."
+msgstr "%s 返回了无效响应。"
 
-msgid "Lucky Status"
-msgstr "Lucky运行状态"
+msgid "Load error: %s"
+msgstr "加载错误：%s"
 
-msgid "Lucky Compilation time"
-msgstr "编译时间"
+msgid "Local access only"
+msgstr "仅限本地访问"
 
-msgid "Lucky Version"
-msgstr "版本"
+msgid "Lucky"
+msgstr "Lucky"
 
-msgid "Admin Panel Login Info"
-msgstr "管理后台登录信息"
+msgid "Lucky service state updated."
+msgstr "Lucky 服务状态已更新。"
 
-msgid "Account"
-msgstr "账号"
+msgid "Lucky version"
+msgstr "Lucky 版本"
 
-msgid "Password"
-msgstr "密码"
+msgid "Manage the Lucky service, admin panel access and persistent configuration directory."
+msgstr "管理 Lucky 服务、后台访问方式和持久化配置目录。"
 
-msgid "Admin Panel"
-msgstr "Lucky 后台管理"
+msgid "New password:"
+msgstr "新密码："
 
-msgid "Open AdminURL"
-msgstr "打开后台管理"
+msgid "Not installed"
+msgstr "未安装"
 
-msgid "Lucky Admin Http Port"
-msgstr "Lucky 后台HTTP端口"
+msgid "Package architecture"
+msgstr "软件包架构"
 
-msgid "Change"
-msgstr "更改"
+msgid "Persistent configuration"
+msgstr "持久化配置"
 
-msgid "portValueError"
-msgstr "端口值有误"
+msgid "Reset admin credentials"
+msgstr "重置管理账号密码"
 
-msgid "Get Lucky Latest Version"
-msgstr "获取Lucky最新版本"
+msgid "Reset the Lucky admin account and generate a new password?"
+msgstr "确定重置 Lucky 管理账号并生成新密码吗？"
 
-msgid "get latest version"
-msgstr "查询最新"
+msgid "Restart"
+msgstr "重启"
 
-msgid "Admin Safe URL"
-msgstr "安全入口"
+msgid "Running"
+msgstr "运行中"
 
-msgid "DefaultAuth"
-msgstr "默认登录账号密码"
+msgid "Running status"
+msgstr "运行状态"
 
-msgid "Reset 666 as admin account and password?"
-msgstr "重置账号密码为666?"
+msgid "Save"
+msgstr "保存"
 
-msgid "update success"
-msgstr "修改成功"
+msgid "Service overview"
+msgstr "服务概览"
 
-msgid "update failed"
-msgstr "修改失败"
+msgid "Start"
+msgstr "启动"
 
-msgid "Allow Internet access"
-msgstr "外网登录后台"
+msgid "Stop"
+msgstr "停止"
 
-msgid "Are you sure Enalbe Internetaccess?"
-msgstr "确定要启用外网访问?"
+msgid "Stopped"
+msgstr "已停止"
 
-msgid "Are you sure Disable Internetaccess?"
-msgstr "确定要禁用外网访问?"
+msgid "The configuration directory must be a safe absolute path."
+msgstr "配置目录必须是安全的绝对路径。"
 
-msgid "are you sure stop lucky service?"
-msgstr "确定要停止Lucky服务?"
+msgid "The operation failed."
+msgstr "操作失败。"
 
-msgid "are you sure start lucky service?"
-msgstr "确定要启动Lucky服务?"
+msgid "The safe URL must be empty or begin with / and contain no spaces."
+msgstr "安全入口必须留空或以 / 开头，且不能包含空白字符。"
 
-msgid "Config file path"
-msgstr "配置文件存放位置"
+msgid "This configuration directory is not allowed."
+msgstr "不允许使用此配置目录。"
 
-msgid "The path to store the config file"
-msgstr "存放配置文件的位置"
+msgid "Unable to load Lucky data."
+msgstr "无法加载 Lucky 数据。"
 
-msgid "allow"
-msgstr "允许"
+msgid "Lucky returned an invalid temporary password."
+msgstr "Lucky 返回了无效的临时密码。"
 
-msgid "not allow"
-msgstr "禁止"
-
-msgid "Basic Settings"
-msgstr "基础设置"
+msgid "Lucky could not restart automatically. Restart it manually after saving this password."
+msgstr "Lucky 无法自动重启。请保存此密码后手动重启服务。"
