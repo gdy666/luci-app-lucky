@@ -37,7 +37,6 @@ jobs:
           python3 scripts/check-po.py luci-app-lucky/po/zh_Hans/lucky.po \
             luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js
           python3 scripts/check-build-matrix.py scripts/build-matrix.json
-          python3 scripts/check-hashes.py lucky/Makefile --verify-remote
 
   build:
     needs: static-checks

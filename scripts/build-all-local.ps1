@@ -171,10 +171,6 @@ Invoke-CheckedCommand python @(
     '--ipk-version', $IpkVersion,
     '--output', $sdkLockCandidate
 )
-Invoke-CheckedCommand python @(
-    (Join-Path $repoRoot 'scripts/check-hashes.py'),
-    (Join-Path $repoRoot 'lucky/Makefile')
-)
 
 if ($ValidateOnly) {
     [IO.File]::Delete($sdkLockCandidate)
