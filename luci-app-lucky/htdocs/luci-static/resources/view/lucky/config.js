@@ -115,9 +115,9 @@ function action(args, successMessage) {
 }
 
 function textRow(label, id) {
-	return E('div', { 'class': 'tr' }, [
-		E('div', { 'class': 'td left', 'width': '33%' }, label),
-		E('div', { 'class': 'td left', 'id': id }, _('Collecting data…'))
+	return E('div', { 'class': 'lucky-stat' }, [
+		E('div', { 'class': 'lucky-label' }, label),
+		E('div', { 'class': 'lucky-value', 'id': id }, _('Collecting data…'))
 	]);
 }
 
@@ -148,7 +148,7 @@ function updateText(id, value, css) {
 	if (!node)
 		return;
 	node.textContent = value;
-	node.className = 'td left lucky-value ' + (css || '');
+	node.className = 'lucky-value ' + (css || '');
 }
 
 function setDisabled(id, disabled) {
@@ -163,7 +163,8 @@ function updateRuntimeStatus() {
 	var link = document.getElementById('lucky-admin-link');
 	var accessible = state.runtimeReady && state.running && state.configReady;
 	if (link) {
-		link.textContent = accessible ? adminURL() : (state.loading ? _('Collecting data…') : _('Available when the service is running'));
+		link.textContent = accessible ? _('Open admin panel') : (state.loading ? _('Collecting data…') : _('Available when the service is running'));
+		updateText('lucky-admin-address', accessible ? adminURL() : '');
 		link.style.pointerEvents = accessible ? '' : 'none';
 		link.setAttribute('aria-disabled', accessible ? 'false' : 'true');
 		if (accessible) {
@@ -253,107 +254,106 @@ function resetCredentials() {
 
 function renderDashboard() {
 	var dashboard = E('div', { 'class': 'cbi-section lucky-dashboard' }, [
-		E('style', {}, [
-			'.lucky-dashboard .table{max-width:760px}',
-			'.lucky-dashboard .td.left{padding:.55rem .75rem}',
-			'.lucky-dashboard .lucky-value{font-weight:600}',
-			'.lucky-dashboard .success{color:#16803a}',
-			'.lucky-dashboard .error{color:#c0392b}',
-			'.lucky-dashboard .warning{color:#9a6700}',
-			'.lucky-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0 1.25rem}',
-			'.lucky-inline{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;margin:.65rem 0}',
-			'.lucky-inline label{min-width:12rem}',
-			'.lucky-inline input[type="text"],.lucky-inline input[type="number"]{max-width:22rem}',
-			'.lucky-admin-link{display:inline-block;margin:.4rem 0 1rem;font-weight:600;overflow-wrap:anywhere}'
-		].join('\n')),
-		E('h3', {}, _('Service overview')),
-		E('div', { 'class': 'table', 'role': 'status', 'aria-live': 'polite' }, [
-			textRow(_('Installation status'), 'lucky-install'),
-			textRow(_('Running status'), 'lucky-running'),
-			textRow(_('Package architecture'), 'lucky-arch'),
-			textRow(_('Lucky version'), 'lucky-version'),
-			textRow(_('Build date'), 'lucky-date'),
-			textRow(_('Admin access policy'), 'lucky-internet')
-		]),
-		E('div', { 'class': 'lucky-actions' }, [
+		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') }),
+		E('div', { 'class': 'lucky-heading' }, [
+			E('div', {}, [ E('h2', {}, _('Lucky')), E('p', {}, _('Service and admin panel')) ]),
 			E('button', {
-				'class': 'btn cbi-button cbi-button-reload',
-				'id': 'lucky-refresh',
-				'type': 'button',
+				'class': 'btn cbi-button cbi-button-reload', 'id': 'lucky-refresh', 'type': 'button',
 				'click': function() { return loadState(); }
-			}, _('Refresh')),
-			serviceButton(_('Start'), 'cbi-button-apply', 'start'),
-			serviceButton(_('Restart'), 'cbi-button-reload', 'restart'),
-			serviceButton(_('Stop'), 'cbi-button-reset', 'stop')
+			}, _('Refresh'))
 		]),
-		E('h3', {}, _('Admin panel')),
-		E('a', {
-			'class': 'lucky-admin-link',
-			'id': 'lucky-admin-link',
-			'target': '_blank',
-			'rel': 'noopener noreferrer',
-			'aria-disabled': 'true',
-			'tabindex': '-1'
-		}, _('Available when the service is running')),
-		E('div', { 'class': 'lucky-inline' }, [
-			E('label', { 'for': 'lucky-port' }, _('Admin HTTP port')),
-			E('input', { 'id': 'lucky-port', 'class': 'cbi-input-text', 'type': 'number', 'min': '1', 'max': '65535' }),
-			E('button', {
-				'class': 'btn cbi-button cbi-button-save',
-				'id': 'lucky-save-port',
-				'type': 'button',
-				'click': function() {
-					var port = document.getElementById('lucky-port').value;
-					if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
-						notifyError(new Error(_('Enter a port from 1 to 65535.')));
-						return;
-					}
-					action([ 'set-port', port ], _('Admin port updated. Restart Lucky to apply it.'));
-				}
-			}, _('Save'))
+		E('section', { 'class': 'lucky-panel', 'aria-label': _('Service overview') }, [
+			E('h3', {}, _('Service overview')),
+			E('div', { 'class': 'lucky-stats', 'role': 'status', 'aria-live': 'polite' }, [
+				textRow(_('Installation status'), 'lucky-install'),
+				textRow(_('Running status'), 'lucky-running'),
+				textRow(_('Package architecture'), 'lucky-arch'),
+				textRow(_('Lucky version'), 'lucky-version'),
+				textRow(_('Build date'), 'lucky-date'),
+				textRow(_('Admin access policy'), 'lucky-internet')
+			]),
+			E('div', { 'class': 'lucky-actions' }, [
+				serviceButton(_('Start'), 'cbi-button-apply', 'start'),
+				serviceButton(_('Restart'), 'cbi-button-reload', 'restart'),
+				serviceButton(_('Stop'), 'cbi-button-reset', 'stop')
+			])
 		]),
-		E('div', { 'class': 'lucky-inline' }, [
-			E('label', { 'for': 'lucky-safe-url' }, _('Admin safe URL')),
-			E('input', { 'id': 'lucky-safe-url', 'class': 'cbi-input-text', 'type': 'text', 'maxlength': '256', 'placeholder': '/secret-path' }),
-			E('button', {
-				'class': 'btn cbi-button cbi-button-save',
-				'id': 'lucky-save-safe-url',
-				'type': 'button',
-				'click': function() {
-					var value = document.getElementById('lucky-safe-url').value;
-					if (value && (value.charAt(0) !== '/' || /\s/.test(value))) {
-						notifyError(new Error(_('The safe URL must be empty or begin with / and contain no spaces.')));
-						return;
-					}
-					action([ 'set-safe-url', value ], _('Admin safe URL updated. Restart Lucky to apply it.'));
-				}
-			}, _('Save'))
-		]),
-		E('div', { 'class': 'lucky-inline' }, [
-			E('label', { 'for': 'lucky-allow-internet' }, _('Allow Internet access to the admin panel')),
-			E('input', { 'id': 'lucky-allow-internet', 'type': 'checkbox' }),
-			E('button', {
-				'class': 'btn cbi-button cbi-button-save',
-				'id': 'lucky-save-internet',
-				'type': 'button',
-				'click': function() {
-					var enabled = document.getElementById('lucky-allow-internet').checked;
-					if (enabled && !window.confirm(_('Exposing the admin panel to the Internet increases risk. Continue?')))
-						return;
-					action([ 'set-internet', enabled ? 'true' : 'false' ], _('Admin access policy updated. Restart Lucky to apply it.'));
-				}
-			}, _('Save'))
-		]),
-		E('div', { 'class': 'lucky-actions' }, [
-			E('button', {
-				'class': 'btn cbi-button cbi-button-negative',
-				'id': 'lucky-reset-auth',
-				'type': 'button',
-				'click': function() {
-					if (window.confirm(_('Reset the Lucky admin account and generate a new password?')))
-						resetCredentials();
-				}
-			}, _('Reset admin credentials'))
+		E('section', { 'class': 'lucky-panel', 'aria-label': _('Admin panel') }, [
+			E('h3', {}, _('Admin panel')),
+			E('a', {
+				'class': 'lucky-admin-link',
+				'id': 'lucky-admin-link',
+				'target': '_blank',
+				'rel': 'noopener noreferrer',
+				'aria-disabled': 'true',
+				'tabindex': '-1'
+			}, _('Available when the service is running')),
+			E('div', { 'id': 'lucky-admin-address', 'class': 'lucky-value' }),
+			E('details', { 'class': 'lucky-settings' }, [
+				E('summary', {}, _('Access settings')),
+				E('p', { 'class': 'lucky-hint' }, _('Save changes, then restart Lucky to apply them.')),
+				E('div', { 'class': 'lucky-inline' }, [
+					E('label', { 'for': 'lucky-port' }, _('Admin HTTP port')),
+					E('input', { 'id': 'lucky-port', 'class': 'cbi-input-text', 'type': 'number', 'min': '1', 'max': '65535' }),
+					E('button', {
+						'class': 'btn cbi-button cbi-button-save',
+						'id': 'lucky-save-port',
+						'type': 'button',
+						'click': function() {
+							var port = document.getElementById('lucky-port').value;
+							if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
+								notifyError(new Error(_('Enter a port from 1 to 65535.')));
+								return;
+							}
+							action([ 'set-port', port ], _('Admin port updated. Restart Lucky to apply it.'));
+						}
+					}, _('Save'))
+				]),
+				E('div', { 'class': 'lucky-inline' }, [
+					E('label', { 'for': 'lucky-safe-url' }, _('Admin safe URL')),
+					E('input', { 'id': 'lucky-safe-url', 'class': 'cbi-input-text', 'type': 'text', 'maxlength': '256', 'placeholder': '/secret-path' }),
+					E('button', {
+						'class': 'btn cbi-button cbi-button-save',
+						'id': 'lucky-save-safe-url',
+						'type': 'button',
+						'click': function() {
+							var value = document.getElementById('lucky-safe-url').value;
+							if (value && (value.charAt(0) !== '/' || /\s/.test(value))) {
+								notifyError(new Error(_('The safe URL must be empty or begin with / and contain no spaces.')));
+								return;
+							}
+							action([ 'set-safe-url', value ], _('Admin safe URL updated. Restart Lucky to apply it.'));
+						}
+					}, _('Save'))
+				]),
+				E('div', { 'class': 'lucky-inline' }, [
+					E('label', { 'for': 'lucky-allow-internet' }, _('Allow Internet access to the admin panel')),
+					E('input', { 'id': 'lucky-allow-internet', 'type': 'checkbox' }),
+					E('button', {
+						'class': 'btn cbi-button cbi-button-save',
+						'id': 'lucky-save-internet',
+						'type': 'button',
+						'click': function() {
+							var enabled = document.getElementById('lucky-allow-internet').checked;
+							if (enabled && !window.confirm(_('Exposing the admin panel to the Internet increases risk. Continue?')))
+								return;
+							action([ 'set-internet', enabled ? 'true' : 'false' ], _('Admin access policy updated. Restart Lucky to apply it.'));
+						}
+					}, _('Save'))
+				]),
+				E('div', { 'class': 'lucky-reset' }, [
+					E('p', { 'class': 'lucky-hint' }, _('Only reset credentials if you cannot sign in.')),
+					E('button', {
+						'class': 'btn cbi-button cbi-button-negative',
+						'id': 'lucky-reset-auth',
+						'type': 'button',
+						'click': function() {
+							if (window.confirm(_('Reset the Lucky admin account and generate a new password?')))
+								resetCredentials();
+						}
+					}, _('Reset admin credentials'))
+				])
+			])
 		])
 	]);
 
@@ -367,8 +367,7 @@ function renderDashboard() {
 
 return view.extend({
 	render: function() {
-		var map = new form.Map('lucky', _('Lucky'),
-			_('Manage the Lucky service, admin panel access and persistent configuration directory.'));
+		var map = new form.Map('lucky');
 		var section = map.section(form.TypedSection, 'lucky', _('Persistent configuration'));
 		section.anonymous = true;
 		section.addremove = false;
@@ -385,7 +384,8 @@ return view.extend({
 		};
 
 		return map.render().then(function(formNode) {
-			return E([], [ renderDashboard(), formNode ]);
+			return E('div', { 'class': 'lucky-page' }, [ renderDashboard(),
+				E('div', { 'class': 'lucky-panel lucky-config' }, [ formNode ]) ]);
 		});
 	}
 });

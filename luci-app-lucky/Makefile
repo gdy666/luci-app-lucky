@@ -5,7 +5,7 @@ include $(INCLUDE_DIR)/version.mk
 
 PKG_NAME:=luci-app-lucky
 PKG_VERSION:=3.0.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 LUCI_TITLE:=LuCI support for Lucky
 LUCI_DESCRIPTION:=Manage the Lucky service and its basic web settings.

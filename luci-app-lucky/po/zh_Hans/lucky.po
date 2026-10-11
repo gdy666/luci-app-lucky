@@ -91,9 +91,6 @@ msgstr "Lucky 服务状态已更新。"
 msgid "Lucky version"
 msgstr "Lucky 版本"
 
-msgid "Manage the Lucky service, admin panel access and persistent configuration directory."
-msgstr "管理 Lucky 服务、后台访问方式和持久化配置目录。"
-
 msgid "New password:"
 msgstr "新密码："
 
@@ -156,3 +153,18 @@ msgstr "Lucky 返回了无效的临时密码。"
 
 msgid "Lucky could not restart automatically. Restart it manually after saving this password."
 msgstr "Lucky 无法自动重启。请保存此密码后手动重启服务。"
+
+msgid "Open admin panel"
+msgstr "打开管理后台"
+
+msgid "Service and admin panel"
+msgstr "服务状态与后台管理"
+
+msgid "Access settings"
+msgstr "访问设置"
+
+msgid "Save changes, then restart Lucky to apply them."
+msgstr "保存设置后，重启 Lucky 生效。"
+
+msgid "Only reset credentials if you cannot sign in."
+msgstr "仅在无法登录时重置管理账号密码。"

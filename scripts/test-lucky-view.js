@@ -19,7 +19,7 @@ function fixture() {
 		return node;
 	}
 	const context = {
-		E, _: value => value, document: { getElementById: id => nodes[id] },
+		E, L: { resource: value => '/luci-static/resources/' + value }, _: value => value, document: { getElementById: id => nodes[id] },
 		window: { location: { hostname: 'localhost' }, setTimeout: fn => timers.push(fn) },
 		view: { extend: value => value }, ui: {},
 		form: { Map: function() {
@@ -62,6 +62,8 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	await flush();
 	assert.equal(f.nodes['lucky-port'].disabled, false);
 	assert.equal(f.nodes['lucky-admin-link'].href, 'http://localhost:16601/preview');
+	assert.equal(f.nodes['lucky-admin-link'].textContent, 'Open admin panel');
+	assert.equal(f.nodes['lucky-admin-address'].textContent, 'http://localhost:16601/preview');
 	f.nodes['lucky-port'].value = '16688';
 	reply(f, 'info', { Version: '2.27.2', Date: 'test' });
 	await loading;
@@ -84,6 +86,9 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	assert.equal(f.nodes['lucky-refresh'].textContent, 'Refresh');
 	assert.equal(f.nodes['lucky-refresh'].disabled, false);
 	assert.equal(f.nodes['lucky-running'].textContent, 'Stopped');
+	assert.equal(f.nodes['lucky-admin-link'].href, undefined);
+	assert.equal(f.nodes['lucky-admin-link']['aria-disabled'], 'true');
+	assert.equal(f.nodes['lucky-admin-address'].textContent, '');
 	assert.equal(f.nodes['lucky-port'].value, 16602);
 	assert.equal(f.nodes['lucky-version'].textContent, '2.27.3');
 
