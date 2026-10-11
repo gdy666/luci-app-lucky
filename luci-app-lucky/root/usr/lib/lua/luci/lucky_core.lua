@@ -75,6 +75,7 @@ local function unpack_core(work)
  must(free.bavail * free.frsize >= expanded * 2 + 1048576, "Not enough temporary space to validate core")
  must(execute("/bin/busybox gzip -dc " .. quote(input), tar, work, 60, math.ceil(expanded / 512)), "Invalid, oversized or damaged gzip archive")
  must(fs.stat(tar).size == expanded, "Gzip size mismatch or concatenated archives")
+ must(fs.unlink(input), "Cannot release uploaded archive")
  local f = must(io.open(tar, "rb"), "Cannot read tar archive")
  local out, found, entries, pending = nil, false, 0, nil
  local ok, err = pcall(function()
@@ -179,13 +180,22 @@ local function probe(path, work)
  must(ok, err)
  local info = json.parse(data)
  must(type(info) == "table" and type(info.Version) == "string" and #info.Version > 0 and #info.Version <= 100, "Not a supported Lucky core (-info failed)")
- return info.Version
+ return info.Version, type(info.Date) == "string" and info.Date:sub(1, 100) or "-"
 end
 function M.status()
  local st = fs.lstat(BIN)
  local status = not st and "missing" or (st.type ~= "reg" and "unsafe" or (fs.access(BIN, "x") and "ready" or "permissions"))
  return { status = status, path = BIN }
 end
+function M.version(work)
+ -- Avoid launching another packed core under memory pressure just to enable an editor.
+ local mem = read("/proc/meminfo")
+ local available = tonumber(mem:match("MemAvailable:%s*(%d+)"))
+ if not available then available = (tonumber(mem:match("MemFree:%s*(%d+)")) or 0) end
+ must(available >= 192 * 1024, "Not enough available memory to check core version; stop Lucky and retry")
+ return probe(BIN, work), digest(BIN)
+end
+function M.fingerprint() return digest(BIN) end
 function M.fix()
  must(safe_target(), "Core is missing; upload a Lucky tar.gz package first")
  elf(BIN); must(fs.chmod(BIN, "755"), "Cannot repair permissions (read-only filesystem?)")
@@ -196,16 +206,16 @@ function M.check(work)
  fs.unlink(work .. "/core-preview")
  safe_target()
  local candidate = unpack_core(work)
- local version = probe(candidate, work)
  write(work .. "/core-preview", digest(candidate))
- return { version = version, bytes = fs.stat(candidate).size, path = BIN }
+ -- Do not execute the candidate while the old service is still running.
+ return { bytes = fs.stat(candidate).size, path = BIN }
 end
 function M.install(work, token, stop, start, running)
  local candidate = work .. "/candidate"
  local st = fs.lstat(candidate)
  must(st and st.type == "reg" and st.nlink == 1, "Check the core archive first")
  must(read(work .. "/core-preview") == digest(candidate), "Core changed; upload and check again")
- elf(candidate); local version = probe(candidate, work)
+ elf(candidate); local version, date
  local original = safe_target()
  local free = must(fs.statvfs("/usr/bin"), "Cannot check core disk space")
  must(free.bavail * free.frsize >= st.size + 1048576, "Not enough space to replace core")
@@ -221,10 +231,11 @@ function M.install(work, token, stop, start, running)
   end)
   src:close(); local closed = dst:close(); must(copied and closed, why or "Cannot finish core write")
   must(digest(staged) == digest(candidate) and fs.chmod(staged, "755"), "Staged core validation failed")
-  -- Probe on the destination filesystem too (e.g. noexec mounts).
-  probe(staged, work)
   resumed = stop()
   safe_target(); must(not running(), "Lucky was started concurrently; replacement cancelled")
+  -- One bounded probe, after stopping the old service, on the destination FS.
+  version, date = probe(staged, work)
+  must(not running(), "Lucky was started concurrently; replacement cancelled")
   if original then must(fs.rename(BIN, old), "Cannot preserve old core"); moved = true end
   must(fs.rename(staged, BIN), "Cannot install new core"); installed = true
   if resumed then must(start(), "New core failed to start") end
@@ -234,11 +245,13 @@ function M.install(work, token, stop, start, running)
   local rolled = not moved or fs.rename(old, BIN)
   if not original and installed then fs.unlink(BIN) end
   fs.unlink(staged)
-  if resumed and rolled and original then start() end
+  if resumed and rolled and original then
+   must(start(), tostring(err) .. "; previous core retained but failed to restart; start it manually")
+  end
   must(rolled, "Core rollback failed; previous core retained at " .. old)
   error(err, 0)
  end
  local cleaned = not moved or fs.unlink(old)
- return { version = version, warning = not cleaned and ("Previous core remains at " .. old) or nil }
+ return { version = version, date = date, running = resumed, warning = not cleaned and ("Previous core remains at " .. old) or nil }
 end
 return M

@@ -19,6 +19,7 @@ function fixture() {
 		return node;
 	}
 	const context = {
+		fs: { write: (path, value) => { context.lastWrite = {path, value}; return Promise.resolve(); } },
 		E, L: { resource: value => '/luci-static/resources/' + value, env: { cgi_base: '/cgi-bin' } }, _: value => value,
 		document: { getElementById: id => nodes[id], querySelectorAll: () => Object.values(nodes).filter(n => /^(button|input)$/.test(n.tag)) },
 		window: { location: { hostname: 'localhost' }, setTimeout: fn => timers.push(fn), confirm: () => true },
@@ -185,6 +186,53 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	reply(missing, 'status', 'false'); reply(missing, 'arch', 'x86_64'); await uploadCore;
 	assert.equal(missing.archiveCalls.some(c => c.operation === 'core-install'), false);
 	console.log('PASS: missing core allows upload; invalid core never reaches replacement');
+	for (const confirm of [false, true]) {
+		let modal;
+		f.context.ui.showModal = (title, children) => { modal = { title, children }; };
+		let i = f.archiveCalls.length;
+		const previousInfo = f.calls.info, previousBase = f.calls.base;
+		const upgrade = f.nodes['lucky-core-upload'].click();
+		f.archiveCalls[i++].reply({ ok: true, token }); await flush();
+		assert.equal(f.archiveCalls[i].operation, 'core-check');
+		f.archiveCalls[i++].reply({ ok: true, bytes: 24000000 }); await flush();
+		assert.equal(modal.title, 'Replace core');
+		assert.equal(f.archiveCalls.length, i, 'no stop/install before confirmation');
+		assert.match(modal.children[1].textContent, /stop before running the new core/);
+		modal.children.at(-1).textContent[confirm ? 2 : 0].click(); await flush();
+		if (confirm) {
+			assert.equal(f.archiveCalls[i].operation, 'core-install');
+			f.archiveCalls[i++].reply({ ok: true, version: '3.2.1', running: false }); await flush();
+			assert.match(f.notices.at(-1).textContent, /3.2.1.*Service remains stopped/);
+		}
+		assert.equal(f.archiveCalls[i].operation, 'cleanup');
+		f.archiveCalls[i].reply({ ok: true }); await flush();
+		reply(f, 'status', 'false'); reply(f, 'arch', 'x86_64');
+		reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } }); reply(f, 'info', { Version: '3.2.1' });
+		await upgrade;
+		assert.equal(f.calls.info, previousInfo, 'must not spawn metadata query alongside restarted service');
+		assert.equal(f.calls.base, previousBase, 'must not spawn configuration query alongside restarted service');
+	}
+	console.log('PASS: static preview requires explicit stop confirmation; cancel only cleans up; success shows actual state');
+	f.nodes['lucky-tab-rules'].click();
+	assert.equal(f.nodes['lucky-tab-panel-overview'].hidden, true);
+	assert.equal(f.nodes['lucky-tab-panel-rules'].hidden, false);
+	assert.equal(missing.nodes['lucky-rules-load-allowlist'].disabled, true);
+	let r = f.archiveCalls.length;
+	const reading = f.nodes['lucky-rules-load-localips'].click(); await flush();
+	assert.equal(f.archiveCalls[r].operation, 'rules-localips');
+	f.archiveCalls[r++].reply({ok:true, token, directory:'/etc/lucky', name:'localips', content:'10.0.0.0/8\n'});
+	await reading;
+	f.nodes['lucky-rules-text-localips'].value = '192.168.0.0/16\n';
+	f.nodes['lucky-rules-text-localips'].input();
+	f.nodes['lucky-tab-overview'].click(); f.nodes['lucky-tab-rules'].click();
+	assert.equal(f.nodes['lucky-rules-text-localips'].value, '192.168.0.0/16\n');
+	const saving = f.nodes['lucky-rules-save-localips'].click(); await flush();
+	assert.equal(JSON.parse(f.context.lastWrite.value).content, '192.168.0.0/16\n');
+	assert.equal(f.archiveCalls[r].operation, 'rules-save');
+	f.archiveCalls[r++].reply({ok:true}); await flush();
+	assert.equal(f.archiveCalls[r].operation, 'cleanup'); f.archiveCalls[r].reply({ok:true}); await saving;
+	assert.equal(f.nodes['lucky-rules-save-localips'].disabled, true);
+	console.log('PASS: accessible tabs preserve edits; version gate and staged rules save work');
 	console.log('PASS: nonblocking render, independent status, safe controls, preserved edits, RPC failure');
 	console.log('PASS: maintenance disables edits, rejects invalid ZIP before restore and cleans up uploads');
 })().catch(err => { console.error(err); process.exitCode = 1; });

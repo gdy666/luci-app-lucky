@@ -84,12 +84,15 @@ try:
     command("uci set lucky.@lucky[0].configdir=" + shlex.quote(conf) + "; uci set lucky.@lucky[0].enabled=1; uci commit lucky; /etc/init.d/lucky start")
     time.sleep(2)
     assert command('pidof lucky').strip()
-    samples = {'binary.bin': bytes(range(256)) * 400, '.hidden': b'hidden', 'nested/space name': b'file with spaces', 'nested/中文': '测试'.encode(), 'script.sh': b'#!/bin/sh\nexit 0\n'}
+    samples = {'ip-allowlist.txt': b'# test\n192.0.2.1\n', 'localips': b'10.0.0.0/8\n192.168.0.0/16\n', 'binary.bin': bytes(range(256)) * 400, '.hidden': b'hidden', 'nested/space name': b'file with spaces', 'nested/中文': '测试'.encode(), 'script.sh': b'#!/bin/sh\nexit 0\n'}
     for name, data in samples.items(): put(conf + '/' + name, data)
     command('chmod 750 ' + conf + '/script.sh')
     token = prepare()
     old_pid = command('pidof lucky').strip()
     call('backup', token)
+    for _ in range(30):
+        if command('pidof lucky', check=False).strip(): break
+        time.sleep(.2)
     assert command('pidof lucky').strip() != old_pid, 'backup must stop and resume Lucky'
     data = command('cat /tmp/lucky-luci-backup/' + token + '/backup.zip')
     with zipfile.ZipFile(io.BytesIO(data)) as z:

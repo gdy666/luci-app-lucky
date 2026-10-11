@@ -90,6 +90,18 @@
         ],
         "/tmp/lucky-luci-backup/*/core.tar.gz": [
           "write"
+        ],
+        "/usr/libexec/lucky-backup rules-localips": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-backup rules-allowlist": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-backup rules-save *": [
+          "exec"
+        ],
+        "/tmp/lucky-luci-backup/*/rules.json": [
+          "write"
         ]
       },
       "uci": [

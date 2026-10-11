@@ -161,12 +161,13 @@ end
 local function main()
 	ensure_root()
 	local operation, token = arg[1], arg[2]
-	must(operation and #arg == ((operation == "prepare" or operation == "core-prepare" or operation == "core-status" or operation == "core-fix") and 1 or 2), "Invalid backup arguments")
+	local rules_open = operation == "rules-localips" or operation == "rules-allowlist"
+	must(operation and #arg == ((rules_open or operation == "prepare" or operation == "core-prepare" or operation == "core-status" or operation == "core-fix") and 1 or 2), "Invalid backup arguments")
 	lock()
 	if operation == "core-status" then return require("luci.lucky_core").status() end
 	if operation == "core-fix" then return require("luci.lucky_core").fix() end
-	if operation == "prepare" or operation == "core-prepare" then
-		local directory = operation == "prepare" and config_dir() or "core"
+	if rules_open or operation == "prepare" or operation == "core-prepare" then
+		local directory = (rules_open or operation == "prepare") and config_dir() or "core"
 		-- Abandoned private uploads/downloads expire at the next operation.
 		for name in fs.dir(ROOT) do
 			if #name == 32 and name:match("^[a-f0-9]+$") then
@@ -178,17 +179,39 @@ local function main()
 		must(fs.mkdir(ROOT .. "/" .. token, "700"), "Cannot create backup workspace")
 		local f = must(io.open(ROOT .. "/" .. token .. "/directory", "w"), "Cannot save backup workspace")
 		must(f:write(directory), "Cannot save backup workspace"); must(f:close(), "Cannot save backup workspace")
+		if rules_open then
+			local ok, result = pcall(require("luci.lucky_rules").open, ROOT .. "/" .. token, directory, operation == "rules-localips" and "localips" or "ip-allowlist.txt")
+			if not ok then remove(ROOT .. "/" .. token); error(result, 0) end
+			result.token = token; return result
+		end
 		return { token = token, directory = directory }
 	end
 	local work = workspace(token)
 	if operation == "cleanup" then remove(work); return {} end
+	if operation == "rules-save" then return require("luci.lucky_rules").save(work, config_dir(), token) end
 	if operation == "core-check" or operation == "core-install" then
 		must(read_file(work .. "/directory") == "core", "Invalid core workspace")
 		local core = require "luci.lucky_core"
 		if operation == "core-check" then return core.check(work) end
 		local function start_core()
 			if not run({ INIT, "start" }) then return false end
-			for _ = 1, 10 do if running() then nixio.nanosleep(1); return running() end; nixio.nanosleep(1) end
+			local function current_core_running()
+				local expected = fs.stat("/usr/bin/lucky")
+				local pipe = io.popen("/bin/pidof lucky", "r")
+				if not expected or not pipe then if pipe then pipe:close() end; return false end
+				local pids = pipe:read("*a"); pipe:close()
+				local found = false
+				for pid in pids:gmatch("%d+") do
+					local actual = fs.stat("/proc/" .. pid .. "/exe")
+					if not actual or actual.ino ~= expected.ino or actual.dev ~= expected.dev then return false end
+					found = true
+				end
+				return found
+			end
+			for _ = 1, 10 do
+				if current_core_running() then nixio.nanosleep(1); return current_core_running() end
+				nixio.nanosleep(1)
+			end
 			return false
 		end
 		return core.install(work, token, function()

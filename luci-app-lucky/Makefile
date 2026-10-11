@@ -5,11 +5,11 @@ include $(INCLUDE_DIR)/version.mk
 
 PKG_NAME:=luci-app-lucky
 PKG_VERSION:=3.0.0
-PKG_RELEASE:=7
+PKG_RELEASE:=9
 
 LUCI_TITLE:=LuCI support for Lucky
 LUCI_DESCRIPTION:=Manage the Lucky service and its basic web settings.
-LUCI_DEPENDS:=+lucky +rpcd-mod-file +luci-lib-nixio +luci-lib-jsonc
+LUCI_DEPENDS:=+lucky +rpcd-mod-file +lua +luci-lib-nixio +luci-lib-jsonc +luci-lib-ip
 LUCI_PKGARCH:=all
 
 # Keep Windows checkout permissions out of the installed package.

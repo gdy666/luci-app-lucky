@@ -309,3 +309,66 @@ msgstr "修复执行权限"
 
 msgid "Upload core"
 msgstr "上传核心"
+
+msgid "Core size: %s bytes"
+msgstr "核心大小：%s 字节"
+
+msgid "Lucky will stop before running the new core for validation. Only /usr/bin/lucky will be replaced; configuration is preserved. Success or failure restores the original running state."
+msgstr "将先停止 Lucky，再运行新核心进行校验。仅替换 /usr/bin/lucky，保留配置。成功或失败后恢复原运行状态。"
+
+msgid "Stop, validate and replace"
+msgstr "停止、校验并替换"
+
+msgid "Stopping Lucky, validating and replacing core…"
+msgstr "正在停止 Lucky、校验并替换核心…"
+
+msgid "Core replaced: %s"
+msgstr "核心已替换：%s"
+
+msgid "Service remains stopped."
+msgstr "服务保持停止。"
+
+msgid "Overview"
+msgstr "概览"
+
+msgid "Access rules"
+msgstr "访问规则"
+
+msgid "Maintenance"
+msgstr "维护"
+
+msgid "Lucky sections"
+msgstr "Lucky 功能分区"
+
+msgid "File contents"
+msgstr "文件内容"
+
+msgid "Load / Reload"
+msgstr "读取 / 重新读取"
+
+msgid "Save file"
+msgstr "保存文件"
+
+msgid "Fill default networks"
+msgstr "填入默认网段"
+
+msgid "Requires Lucky 3.1.0 or later; refresh core information after upgrading."
+msgstr "需要 Lucky 3.1.0 或更高正式版本；升级后请刷新核心信息。"
+
+msgid "Discard unsaved rule changes and reload?"
+msgstr "放弃尚未保存的规则修改并重新读取？"
+
+msgid "Saved. Lucky loads rule changes automatically; older cores may need a restart after clearing localips."
+msgstr "已保存。Lucky 会自动加载规则；旧核心清空 localips 后可能需要重启。"
+
+msgid "Loaded from the saved configuration directory."
+msgstr "已从保存的配置目录读取。"
+
+msgid "Included in full-directory backups. One entry per line; limit 64 KiB. Load before editing."
+msgstr "随整目录备份与还原。每行一条，最大 64 KiB；请先读取再编辑。"
+
+msgid "Absolute IP allowlist, ahead of the global blacklist. Single IP addresses only; # starts a comment line. No CIDR, domains or ports. Only direct peers are matched; login and other protections remain active."
+msgstr "绝对白名单，优先于全局黑名单。仅接受单个 IP，可用 # 开头写整行注释；不支持网段、域名或端口。仅匹配实际连接对端，登录及其他防护仍有效。"
+
+msgid "Custom LAN IPs and CIDR networks replace built-in networks. Do not add public networks unless intended. Fill defaults to restore the standard LAN ranges."
+msgstr "自定义内网 IP 与 CIDR 网段会替代内置网段，请谨慎添加公网地址。可填入默认网段后保存，恢复标准内网范围。"

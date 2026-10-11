@@ -31,7 +31,7 @@ def archive(binary,extra=None):
 def upload(t,data):put('/tmp/lucky-luci-backup/'+t+'/core.tar.gz',data)
 try:
  # Test the private version probe independently of ELF validation.
- put('/tmp/lucky-core-probe-test.lua',b'local c=require "luci.lucky_core"; for i=1,20 do local k,v=debug.getupvalue(c.check,i); if k=="probe" then local ok,r=pcall(v,arg[1],"/tmp"); print(require("luci.jsonc").stringify({ok=ok,result=tostring(r)})); return end end; error("probe not found")')
+ put('/tmp/lucky-core-probe-test.lua',b'local c=require "luci.lucky_core"; for i=1,20 do local k,v=debug.getupvalue(c.install,i); if k=="probe" then local ok,r=pcall(v,arg[1],"/tmp"); print(require("luci.jsonc").stringify({ok=ok,result=tostring(r)})); return end end; error("probe not found")')
  for body,expected in [(b'echo \'{"Version":"test"}\'',True),(b'head -c 20000 /dev/zero',False),(b'exit 42',False),(b'sleep 20',False)]:
   put('/tmp/lucky-core-probe-test.sh',b'#!/bin/sh\n'+body+b'\n');cmd('chmod 700 /tmp/lucky-core-probe-test.sh')
   result=json.loads(cmd('lua /tmp/lucky-core-probe-test.lua /tmp/lucky-core-probe-test.sh'))
@@ -42,7 +42,7 @@ try:
  assert call('core-fix')['status']=='ready';assert cmd('cat /usr/bin/lucky')==core
  print('PASS: detect and repair execute permission without changing core bytes',flush=True)
  t=prepare();upload(t,archive(core,'scripts/ignored-service'))
- info=call('core-check',t);assert info['version'];call('core-install',t)
+ info=call('core-check',t);assert info['bytes'] and 'version' not in info;call('core-install',t)
  assert cmd('cat /usr/bin/lucky')==core and cmd('cat /etc/config/lucky')==original_uci
  assert bool(cmd('pidof lucky',False).strip())==was_running
  print('PASS: real Lucky ELF PAX tar.gz validates, installs, preserves config and service state',flush=True)
@@ -51,7 +51,14 @@ try:
  for data in [archive(bytes(wrong)),archive(b'#!/bin/sh\nexit 0\n'),archive(core,'../outside'),archive(core)[:-5],b'not gzip']:
   x=prepare();upload(x,data);call('core-check',x,False);call('core-install',x,False)
   assert cmd('cat /usr/bin/lucky')==core and cmd('pidof lucky',False).strip()==before
+  call('cleanup',x);tokens.remove(x)
  print('PASS: wrong architecture, scripts, unsafe paths, damaged gzip rejected before stop',flush=True)
+ # A runtime probe failure must happen after stop and restore the old service.
+ wrapper='/tmp/lucky-core-rename-test.lua'
+ put(wrapper,b'local c=require "luci.lucky_core"; for i=1,30 do local k=debug.getupvalue(c.install,i); if k=="probe" then debug.setupvalue(c.install,i,function() assert(os.execute("pidof lucky >/dev/null")~=0,"probe ran before stop"); error("injected probe failure") end); break end end; dofile("/usr/libexec/lucky-backup")')
+ r=json.loads(cmd('lua '+wrapper+' core-install '+t));assert not r['ok'] and 'injected probe failure' in r['error'],r
+ assert cmd('cat /usr/bin/lucky')==core and bool(cmd('pidof lucky',False).strip())==was_running
+ print('PASS: runtime validation happens after stop; failed probe restores old service',flush=True)
  # Force the second rename to fail to prove old binary is restored.
  wrapper='/tmp/lucky-core-rename-test.lua'
  put(wrapper,b'local f=require "nixio.fs"; local r=f.rename; f.rename=function(a,b) if a:find("/.lucky-new-",1,true) then return nil end return r(a,b) end; dofile("/usr/libexec/lucky-backup")')
@@ -72,6 +79,7 @@ try:
  assert call('core-status')['status']=='unsafe';call('core-fix',ok=False);call('core-install',t,False)
  print('PASS: symlink core rejected',flush=True)
  if args.archive:
+  for expired in list(tokens):call('cleanup',expired);tokens.remove(expired)
   # Give the newer core its own empty configuration directory, preserving fixtures.
   cmd('rm /usr/bin/lucky');put('/usr/bin/lucky',core);cmd('chmod 755 /usr/bin/lucky')
   isolated=cmd('mktemp -d /tmp/lucky-core-config.XXXXXX').decode().strip()
@@ -81,11 +89,14 @@ try:
   with tarfile.open(fileobj=io.BytesIO(payload),mode='r:gz') as package:
    member=next(m for m in package.getmembers() if m.name.removeprefix('./')=='lucky')
    expected=hashlib.sha256(package.extractfile(member).read()).hexdigest()
-  t=prepare();upload(t,payload);info=call('core-check',t);call('core-install',t)
-  assert hashlib.sha256(cmd('cat /usr/bin/lucky')).hexdigest()==expected
-  assert json.loads(cmd('/usr/bin/lucky -info'))['Version']==info['version']
-  assert cmd('pidof lucky',False).strip()
-  print('PASS: supplied release archive installed byte-for-byte and restarted: '+info['version'],flush=True)
+  for attempt in range(2):
+   t=prepare();upload(t,payload);before=cmd('pidof lucky',False).strip();call('core-check',t)
+   assert cmd('pidof lucky',False).strip()==before
+   info=call('core-install',t)
+   assert hashlib.sha256(cmd('cat /usr/bin/lucky')).hexdigest()==expected
+   assert info['running'] and cmd('pidof lucky',False).strip()
+   print('PASS: supplied release archive installed byte-for-byte and restarted: '+info['version'],flush=True)
+   call('cleanup',t);tokens.remove(t)
 finally:
  cmd('/etc/init.d/lucky stop',False);cmd('rm -f /usr/bin/lucky');put('/usr/bin/lucky',core);cmd('chmod 755 /usr/bin/lucky');put('/etc/config/lucky',original_uci)
  if was_running:cmd('/etc/init.d/lucky start')
