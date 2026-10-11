@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .lucky-page {
 	max-width:1100px;
+	min-width:0;
 	margin:0 auto;
 }
 
@@ -23,10 +24,36 @@
 	margin:0 0 1.5rem;
 }
 
+.lucky-page .lucky-heading h2,
+.lucky-page h3 {
+	/* Themes may turn every heading into a positioned, painted page banner. */
+	position:static!important;
+	float:none!important;
+	transform:none!important;
+	width:auto!important;
+	min-width:0!important;
+	max-width:none!important;
+	height:auto!important;
+	min-height:0!important;
+	margin:0!important;
+	padding:0!important;
+	border:0!important;
+	border-radius:0!important;
+	background:none!important;
+	box-shadow:none!important;
+	color:inherit!important;
+	text-shadow:none!important;
+	line-height:1.4!important;
+}
+
+.lucky-page .lucky-heading h2::before,
+.lucky-page .lucky-heading h2::after,
+.lucky-page h3::before,
+.lucky-page h3::after {
+	display:none!important;
+}
+
 .lucky-page .lucky-heading h2 {
-	margin:0;
-	padding:0;
-	border:0;
 	font-size:1.8rem;
 	line-height:1.3;
 	font-weight:700;
@@ -34,11 +61,14 @@
 
 .lucky-page .lucky-heading p {
 	margin:.4rem 0 0;
+	padding:0;
 	opacity:.7;
 	line-height:1.6;
 }
 
 .lucky-page .lucky-panel {
+	min-width:0;
+	box-sizing:border-box;
 	border:1px solid rgba(128,128,128,.25);
 	border-radius:10px;
 	padding:1.4rem;
@@ -78,23 +108,23 @@
 	background:rgba(128,128,128,.12);
 }
 
-.lucky-page #lucky-running.success {
+.lucky-page #lucky-running.lucky-state-success {
 	color:#fff;
 	background:#237547;
 }
 
-.lucky-page #lucky-running.error {
+.lucky-page #lucky-running.lucky-state-error {
 	color:#fff;
 	background:#a33c32;
 }
 
-.lucky-page #lucky-install.error {
+.lucky-page #lucky-install.lucky-state-error {
 	color:inherit;
 	border-left:3px solid #c45142;
 	padding-left:.7rem;
 }
 
-.lucky-page .warning {
+.lucky-page .lucky-state-warning {
 	border-left:3px solid #ba881a;
 	padding-left:.7rem;
 }
@@ -109,6 +139,9 @@
 }
 
 .lucky-page .cbi-button {
+	box-sizing:border-box;
+	max-width:100%;
+	height:auto;
 	min-height:36px;
 	margin:0;
 	white-space:normal;
@@ -116,6 +149,10 @@
 }
 
 .lucky-page .lucky-admin-link {
+	box-sizing:border-box;
+	max-width:100%;
+	white-space:normal;
+	overflow-wrap:anywhere;
 	display:inline-flex;
 	align-items:center;
 	justify-content:center;
@@ -158,6 +195,7 @@
 }
 
 .lucky-page .lucky-hint {
+	padding:0;
 	font-size:.9em;
 	opacity:.7;
 	line-height:1.6;
@@ -176,6 +214,17 @@
 .lucky-page .lucky-inline label {
 	line-height:1.6;
 	margin:0;
+	padding:0;
+	color:inherit;
+	float:none;
+	width:auto;
+}
+
+.lucky-page .lucky-inline > *,
+.lucky-page .lucky-stat,
+.lucky-page .lucky-heading > div {
+	min-width:0;
+	overflow-wrap:anywhere;
 }
 
 .lucky-page .lucky-inline input[type="text"],.lucky-page .lucky-inline input[type="number"] {
@@ -201,8 +250,8 @@
 
 .lucky-page .lucky-reset p {
 	margin:0;
-	flex:1;
-	min-width:180px;
+	flex:1 1 180px;
+	min-width:0;
 }
 
 .lucky-page a:focus,.lucky-page button:focus,.lucky-page summary:focus {
@@ -212,6 +261,10 @@
 
 .lucky-page .lucky-config .cbi-map {
 	margin:0;
+}
+
+.lucky-page .lucky-config .cbi-value-title {
+	color:inherit;
 }
 
 .lucky-page .lucky-config .cbi-section {

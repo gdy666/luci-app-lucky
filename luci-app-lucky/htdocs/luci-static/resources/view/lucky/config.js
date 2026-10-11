@@ -148,7 +148,7 @@ function updateText(id, value, css) {
 	if (!node)
 		return;
 	node.textContent = value;
-	node.className = 'lucky-value ' + (css || '');
+	node.className = 'lucky-value' + (css ? ' lucky-state-' + css : '');
 }
 
 function setDisabled(id, disabled) {
@@ -253,7 +253,7 @@ function resetCredentials() {
 }
 
 function renderDashboard() {
-	var dashboard = E('div', { 'class': 'cbi-section lucky-dashboard' }, [
+	var dashboard = E('div', { 'class': 'lucky-dashboard' }, [
 		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') }),
 		E('div', { 'class': 'lucky-heading' }, [
 			E('div', {}, [ E('h2', {}, _('Lucky')), E('p', {}, _('Service and admin panel')) ]),
