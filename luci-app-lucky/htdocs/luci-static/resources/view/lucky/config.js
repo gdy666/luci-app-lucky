@@ -254,7 +254,8 @@ function resetCredentials() {
 
 function renderDashboard() {
 	var dashboard = E('div', { 'class': 'lucky-dashboard' }, [
-		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') }),
+		// LuCI versions its view scripts, but custom stylesheet URLs need their own revision.
+		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') + '?v=3.0.0-4' }),
 		E('div', { 'class': 'lucky-heading' }, [
 			E('div', {}, [ E('h2', {}, _('Lucky')), E('p', {}, _('Service and admin panel')) ]),
 			E('button', {
