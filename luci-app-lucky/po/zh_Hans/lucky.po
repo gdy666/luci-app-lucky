@@ -168,3 +168,144 @@ msgstr "保存设置后，重启 Lucky 生效。"
 
 msgid "Only reset credentials if you cannot sign in."
 msgstr "仅在无法登录时重置管理账号密码。"
+
+msgid "Configuration backup and restore"
+msgstr "配置备份与还原"
+
+msgid "Back up every file in the saved configuration directory. Restore replaces the entire directory. Lucky is stopped during the operation and restarted only if it was running."
+msgstr "备份已保存配置路径下的全部文件，还原时完整替换目录。操作期间会停止 Lucky，原本运行时将在操作结束后自动启动。"
+
+msgid "Only LuCI full-directory ZIP backups are supported here, not backups exported by the Lucky admin panel. ZIP limit: 64 MiB; up to 10000 entries."
+msgstr "此处仅支持 LuCI 整目录 ZIP 备份，不支持 Lucky 管理后台导出的备份。ZIP 最大 64 MiB，最多 10000 个文件及目录。"
+
+msgid "Download backup"
+msgstr "下载备份"
+
+msgid "Restore backup"
+msgstr "还原备份"
+
+msgid "Backup operation failed."
+msgstr "备份还原操作失败。"
+
+msgid "Lucky will be stopped while creating the backup. Continue?"
+msgstr "创建备份期间会停止 Lucky，是否继续？"
+
+msgid "Select a LuCI directory backup to restore."
+msgstr "请选择需要还原的 LuCI 整目录备份。"
+
+msgid "Stopping Lucky and creating backup…"
+msgstr "正在停止 Lucky 并创建备份…"
+
+msgid "Configuration backup downloaded."
+msgstr "配置备份已下载。"
+
+msgid "Checking backup…"
+msgstr "正在校验备份…"
+
+msgid "This will stop Lucky and replace ALL files in the saved configuration directory. Files absent from the backup will be deleted. Continue?"
+msgstr "即将停止 Lucky 并完整替换已保存配置路径下的所有文件，备份中不存在的文件会被删除。是否继续？"
+
+msgid "Stopping Lucky and restoring configuration…"
+msgstr "正在停止 Lucky 并还原配置…"
+
+msgid "Configuration restored."
+msgstr "配置已还原。"
+
+msgid "Configuration directory: %s"
+msgstr "配置目录：%s"
+
+msgid "Confirm full-directory restore"
+msgstr "确认整目录还原"
+
+msgid "Files to delete"
+msgstr "将删除的文件及目录"
+
+msgid "Files to replace"
+msgstr "将替换的文件及目录"
+
+msgid "Files to create"
+msgstr "将新增的文件及目录"
+
+msgid "Confirm restore"
+msgstr "确认还原"
+
+msgid "None"
+msgstr "无"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Restore is allowed only into an empty directory or one containing a regular .lkcf file at its root. You will review the file changes before confirming."
+msgstr "还原目标必须为空目录，或根目录中已有普通 .lkcf 文件。执行前会列出文件变更供你确认。"
+
+msgid "Clear configuration"
+msgstr "清空配置"
+
+msgid "Confirm clear"
+msgstr "确认清空"
+
+msgid "Checking configuration directory…"
+msgstr "正在检查配置目录…"
+
+msgid "Stopping Lucky and clearing configuration…"
+msgstr "正在停止 Lucky 并清空配置…"
+
+msgid "Configuration cleared. Lucky remains stopped. Start it manually when ready."
+msgstr "配置已清空，Lucky 保持停止。准备好后请手动启动。"
+
+msgid "This permanently deletes ALL files, including hidden files and subdirectories. Back up first. Lucky will remain stopped after clearing; start it manually to create fresh configuration."
+msgstr "此操作会永久删除全部文件，包括隐藏文件和子目录，请先备份。清空后 Lucky 保持停止，手动启动后生成新配置。"
+
+msgid "Unable to inspect core."
+msgstr "无法检查核心。"
+
+msgid "Executable"
+msgstr "执行权限正常"
+
+msgid "Core missing"
+msgstr "核心文件不存在"
+
+msgid "Execution permission missing"
+msgstr "缺少执行权限"
+
+msgid "Unsafe core path"
+msgstr "核心路径异常"
+
+msgid "Upload a trusted Lucky Linux tar.gz release for this device. Only the core executable will be replaced; configuration is preserved. Continue?"
+msgstr "请上传可信来源、匹配本设备的 Lucky Linux tar.gz 升级包。只替换核心程序，保留配置，是否继续？"
+
+msgid "Core maintenance"
+msgstr "核心维护"
+
+msgid "Checking core archive and architecture…"
+msgstr "正在校验核心升级包与架构…"
+
+msgid "Replace core"
+msgstr "替换核心"
+
+msgid "New core version: %s"
+msgstr "新核心版本：%s"
+
+msgid "Only /usr/bin/lucky will be replaced. Lucky will stop during replacement and resume only if it was running. Configuration files are preserved."
+msgstr "仅替换 /usr/bin/lucky。替换期间会停止 Lucky，原本运行时将自动启动，配置文件保持不变。"
+
+msgid "Replacing core…"
+msgstr "正在替换核心…"
+
+msgid "Core replaced."
+msgstr "核心已替换。"
+
+msgid "Core execution permissions repaired."
+msgstr "核心执行权限已修复。"
+
+msgid "Core file status"
+msgstr "核心文件状态"
+
+msgid "Repair missing execution permissions, or upload a trusted Lucky Linux tar.gz release to install or replace the core. Configuration is preserved. Archive limit: 64 MiB."
+msgstr "可修复执行权限，或上传可信的 Lucky Linux tar.gz 升级包安装、替换核心。保留配置，升级包最大 64 MiB。"
+
+msgid "Repair execution permissions"
+msgstr "修复执行权限"
+
+msgid "Upload core"
+msgstr "上传核心"

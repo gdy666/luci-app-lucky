@@ -1,4 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+.lucky-archive-list {
+	max-height:12rem;
+	overflow:auto;
+	white-space:pre-wrap;
+	overflow-wrap:anywhere;
+}
+
 .lucky-page {
 	max-width:1100px;
 	min-width:0;

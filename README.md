@@ -30,6 +30,8 @@ apk add --allow-untrusted /tmp/luci-app-lucky-*.apk /tmp/luci-i18n-lucky-zh-cn-*
 
 安装后进入 LuCI 的 **服务 → Lucky**。
 
+LuCI 支持整目录 ZIP 备份与完整替换还原（含隐藏文件和子目录）。操作前停止 Lucky，原本运行时操作结束后恢复运行；此格式仅供 LuCI 还原，不与 Lucky 后台的模块备份混用。
+
 旧版可直接安装新版软件包升级，无需先卸载。升级会保留服务配置和 Lucky 数据，建议提前在 Lucky 后台导出备份。
 
 ## 构建与开发
@@ -48,3 +50,7 @@ apk add --allow-untrusted /tmp/luci-app-lucky-*.apk /tmp/luci-i18n-lucky-zh-cn-*
 
 - Lucky 核心：MIT
 - LuCI 管理界面：Apache-2.0
+
+清空配置会先展示删除清单并停止 Lucky，删除配置目录内全部内容后保持停止，手动启动即可生成新配置。仅允许操作空目录或根目录含普通 `.lkcf` 文件的专用配置目录，请先备份。
+
+核心维护支持检测核心缺失、修复执行权限，以及上传匹配架构的 Lucky Linux `tar.gz` 升级包，仅替换核心程序。校验通过后才停止服务，替换失败时尝试回滚旧核心。

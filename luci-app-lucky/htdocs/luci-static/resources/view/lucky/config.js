@@ -4,6 +4,8 @@
 'require form';
 'require rpc';
 'require ui';
+'require fs';
+'require request';
 
 var HELPER = '/usr/libexec/lucky-call';
 // Keep the fast status request out of the slow binary-query RPC batch.
@@ -15,8 +17,10 @@ var callHelper = rpc.declare({
 });
 var resetInProgress = false;
 var refreshInProgress = false;
+var backupInProgress = false;
 var state = {
 	installed: false,
+	core: "unknown",
 	running: false,
 	infoReady: false,
 	configReady: false,
@@ -31,8 +35,8 @@ var state = {
 	allowInternet: false
 };
 
-function helper(args) {
-	return callHelper(HELPER, args).then(function(res) {
+function helper(args, program) {
+	return callHelper(program || HELPER, args).then(function(res) {
 		if (!res || typeof res !== 'object')
 			throw new Error(rpc.getStatusText(res));
 		if (typeof res.code === 'number' && res.code !== 0) {
@@ -53,12 +57,15 @@ function parseJSON(value, source) {
 }
 
 function loadState() {
-	if (refreshInProgress)
+	if (refreshInProgress || backupInProgress)
 		return Promise.resolve();
 	refreshInProgress = true;
 	state.loading = true;
 	state.error = null;
 	state.configReady = false;
+	state.installed = false;
+	state.infoReady = false;
+	state.version = state.date = "-";
 	updateDashboard(false);
 	function failed(err) {
 		state.error = err && err.message ? err.message : _('Unable to load Lucky data.');
@@ -66,6 +73,12 @@ function loadState() {
 	}
 
 	return Promise.all([
+		helper([ 'core-status' ], '/usr/libexec/lucky-backup').then(function(value) {
+			var core = parseJSON(value, 'Core status');
+			if (!core.ok) throw new Error(core.error || _('Unable to inspect core.'));
+			state.core = core.status;
+			updateDashboard(false);
+		}).catch(function(err) { state.core = 'unknown'; failed(err); }),
 		helper([ 'info' ]).then(function(value) {
 			var info = parseJSON(value, 'Lucky -info');
 			state.installed = true;
@@ -179,7 +192,7 @@ function updateRuntimeStatus() {
 
 	setDisabled('lucky-service-start', !state.installed || !state.runtimeReady || refreshInProgress || state.running);
 	setDisabled('lucky-service-restart', !state.installed || !state.runtimeReady || refreshInProgress);
-	setDisabled('lucky-service-stop', !state.installed || !state.runtimeReady || refreshInProgress || !state.running);
+	setDisabled('lucky-service-stop', !state.runtimeReady || refreshInProgress || !state.running);
 }
 
 function updateDashboard(updateInputs) {
@@ -189,6 +202,12 @@ function updateDashboard(updateInputs) {
 		refresh.textContent = refreshInProgress ? _('Refreshing…') : _('Refresh');
 	}
 	updateText('lucky-install', state.error ? _('Load error: %s').format(state.error) : (state.installed ? _('Installed') : (state.loading ? _('Collecting data…') : _('Not installed'))), state.error ? 'error' : (state.installed ? 'success' : ''));
+	var health = { ready: _('Executable'), missing: _('Core missing'), permissions: _('Execution permission missing'), unsafe: _('Unsafe core path'), unknown: _('Unable to inspect core.') };
+	updateText('lucky-core-health', health[state.core] || health.unknown);
+	setDisabled('lucky-core-fix', state.core !== 'permissions' || refreshInProgress || backupInProgress || resetInProgress);
+	setDisabled('lucky-core-upload', refreshInProgress || backupInProgress || resetInProgress);
+	if (state.core === 'missing' || state.core === 'permissions' || state.core === 'unsafe')
+		updateText('lucky-install', health[state.core], 'error');
 	updateText('lucky-arch', state.arch);
 	updateText('lucky-version', !state.infoReady && state.loading ? _('Collecting data…') : state.version);
 	updateText('lucky-date', !state.infoReady && state.loading ? _('Collecting data…') : state.date);
@@ -211,7 +230,156 @@ function updateDashboard(updateInputs) {
 	setDisabled('lucky-save-safe-url', !state.configReady || refreshInProgress);
 	setDisabled('lucky-save-internet', !state.configReady || refreshInProgress);
 	setDisabled('lucky-reset-auth', !state.configReady || refreshInProgress || resetInProgress);
+	setDisabled('lucky-backup', !state.installed || refreshInProgress || resetInProgress || backupInProgress);
+	setDisabled('lucky-restore', !state.installed || refreshInProgress || resetInProgress || backupInProgress);
+	setDisabled('lucky-clear', !state.installed || refreshInProgress || resetInProgress || backupInProgress);
 	updateRuntimeStatus();
+}
+
+function archiveCall(operation, token) {
+	// cgi-exec avoids ubus output/time limits. The long-running operation owns
+	// service recovery, so it does not depend on a second browser request.
+	var command = '/usr/libexec/lucky-backup ' + operation + (token ? ' ' + token : '');
+	return request.post(L.env.cgi_base + '/cgi-exec',
+		'sessionid=' + encodeURIComponent(rpc.getSessionID()) + '&command=' + encodeURIComponent(command), {
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 0
+		}).then(function(response) {
+			if (response.status !== 200)
+				throw new Error(_('Backup operation failed.'));
+			var result = response.json();
+			if (result.warning)
+				ui.addNotification(null, E('p', {}, result.warning), 'warning');
+			if (!result.ok)
+				throw new Error(result.error || _('Backup operation failed.'));
+			return result;
+		});
+}
+
+function coreMaintenance(upload) {
+	if (backupInProgress || refreshInProgress || resetInProgress) return Promise.resolve();
+	if (upload && !window.confirm(_('Upload a trusted Lucky Linux tar.gz release for this device. Only the core executable will be replaced; configuration is preserved. Continue?')))
+		return Promise.resolve();
+	backupInProgress = true;
+	var token, saved = [];
+	Array.prototype.forEach.call(document.querySelectorAll('.lucky-page button, .lucky-page input, .lucky-page select'), function(node) {
+		saved.push([node, node.disabled]); node.disabled = true;
+	});
+	return (upload ? archiveCall('core-prepare').then(function(result) {
+		if (!/^[a-f0-9]{32}$/.test(result.token)) throw new Error(_('Backup operation failed.'));
+		token = result.token;
+		return ui.uploadFile('/tmp/lucky-luci-backup/' + token + '/core.tar.gz');
+	}).then(function() {
+		ui.showModal(_('Core maintenance'), [ E('p', { 'class': 'spinning' }, _('Checking core archive and architecture…')) ]);
+		return archiveCall('core-check', token);
+	}).then(function(info) {
+		return new Promise(function(resolve) {
+			ui.showModal(_('Replace core'), [
+				E('p', {}, _('New core version: %s').format(info.version)),
+				E('p', {}, _('Only /usr/bin/lucky will be replaced. Lucky will stop during replacement and resume only if it was running. Configuration files are preserved.')),
+				E('div', { 'class': 'right' }, [
+					E('button', { 'type': 'button', 'class': 'btn', 'click': function() { resolve(false); } }, _('Cancel')), ' ',
+					E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-negative', 'click': function() { resolve(true); } }, _('Replace core'))
+				])
+			]);
+		});
+	}).then(function(confirmed) {
+		if (!confirmed) return;
+		ui.showModal(_('Core maintenance'), [ E('p', { 'class': 'spinning' }, _('Replacing core…')) ]);
+		return archiveCall('core-install', token).then(function() {
+			ui.addNotification(null, E('p', {}, _('Core replaced.')), 'info');
+		});
+	}) : archiveCall('core-fix').then(function() {
+		ui.addNotification(null, E('p', {}, _('Core execution permissions repaired.')), 'info');
+	})).catch(notifyError).then(function() {
+		return token ? archiveCall('cleanup', token).catch(notifyError) : null;
+	}).then(function() {
+		ui.hideModal(); backupInProgress = false;
+		saved.forEach(function(item) { item[0].disabled = item[1]; });
+		return loadState();
+	});
+}
+
+function confirmRestore(info, clearing) {
+	return new Promise(function(resolve) {
+		function choose(value) { ui.hideModal(); resolve(value); }
+		function files(label, names) {
+			names = Array.isArray(names) ? names : [];
+			return E('details', { 'open': names.length ? '' : null }, [
+				E('summary', {}, label + ' (' + names.length + ')'),
+				E('pre', { 'class': 'lucky-archive-list' }, names.length ? names.join('\n') : _('None'))
+			]);
+		}
+		ui.showModal(clearing ? _('Clear configuration') : _('Confirm full-directory restore'), [
+			E('p', {}, _('Configuration directory: %s').format(info.directory)),
+			E('p', {}, clearing ? _('This permanently deletes ALL files, including hidden files and subdirectories. Back up first. Lucky will remain stopped after clearing; start it manually to create fresh configuration.') : _('This will stop Lucky and replace ALL files in the saved configuration directory. Files absent from the backup will be deleted. Continue?')),
+			files(_('Files to delete'), info.removed),
+			clearing ? '' : files(_('Files to replace'), info.replaced),
+			clearing ? '' : files(_('Files to create'), info.added),
+			E('div', { 'class': 'right' }, [
+				E('button', { 'type': 'button', 'class': 'btn', 'click': function() { choose(false); } }, _('Cancel')),
+				' ', E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-negative',
+					'click': function() { choose(true); } }, clearing ? _('Confirm clear') : _('Confirm restore'))
+			])
+		]);
+	});
+}
+
+function configurationArchive(restore) {
+	var clearing = restore === 'clear';
+	if (backupInProgress || refreshInProgress || resetInProgress)
+		return Promise.resolve();
+	if (!restore && !window.confirm(_('Lucky will be stopped while creating the backup. Continue?')))
+		return Promise.resolve();
+	backupInProgress = true;
+	var token, savedButtons = [];
+	Array.prototype.forEach.call(document.querySelectorAll('.lucky-page button, .lucky-page input, .lucky-page select'), function(node) {
+		savedButtons.push([node, node.disabled]);
+		node.disabled = true;
+	});
+	var status = document.getElementById('lucky-backup-status');
+	status.textContent = clearing ? _('Checking configuration directory…') : restore ? _('Select a LuCI directory backup to restore.') : _('Stopping Lucky and creating backup…');
+	if (!restore)
+		ui.showModal(_('Configuration backup and restore'), [ E('p', { 'class': 'spinning' }, status.textContent) ]);
+	return archiveCall('prepare').then(function(result) {
+		if (!/^[a-f0-9]{32}$/.test(result.token))
+			throw new Error(_('Backup operation failed.'));
+		token = result.token;
+		if (!restore) {
+			return archiveCall('backup', token).then(function(result) {
+				return fs.read_direct('/tmp/lucky-luci-backup/' + token + '/backup.zip', 'blob').then(function(blob) {
+					var url = URL.createObjectURL(blob);
+					var link = E('a', { href: url, download: result.filename });
+					document.body.appendChild(link);
+					link.click();
+					link.parentNode.removeChild(link);
+					window.setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+					ui.addNotification(null, E('p', {}, _('Configuration backup downloaded.')), 'info');
+				});
+			});
+		}
+		return (clearing ? archiveCall('clear-check', token) : ui.uploadFile('/tmp/lucky-luci-backup/' + token + '/upload.zip').then(function() {
+			status.textContent = _('Checking backup…');
+			ui.showModal(_('Configuration backup and restore'), [ E('p', { 'class': 'spinning' }, status.textContent) ]);
+			return archiveCall('check', token);
+		})).then(function(info) {
+			return confirmRestore(info, clearing).then(function(confirmed) {
+				if (!confirmed) return;
+				status.textContent = clearing ? _('Stopping Lucky and clearing configuration…') : _('Stopping Lucky and restoring configuration…');
+				ui.showModal(_('Configuration backup and restore'), [ E('p', { 'class': 'spinning' }, status.textContent) ]);
+				return archiveCall(clearing ? 'clear' : 'restore', token).then(function() {
+					ui.addNotification(null, E('p', {}, clearing ? _('Configuration cleared. Lucky remains stopped. Start it manually when ready.') : _('Configuration restored.')), 'info');
+				});
+			});
+		});
+	}).catch(notifyError).then(function() {
+		return token ? archiveCall('cleanup', token).catch(notifyError) : null;
+	}).then(function() {
+		ui.hideModal();
+		backupInProgress = false;
+		savedButtons.forEach(function(item) { item[0].disabled = item[1]; });
+		status.textContent = '';
+		return loadState();
+	});
 }
 
 function showResetCredentials(result) {
@@ -255,7 +423,7 @@ function resetCredentials() {
 function renderDashboard() {
 	var dashboard = E('div', { 'class': 'lucky-dashboard' }, [
 		// LuCI versions its view scripts, but custom stylesheet URLs need their own revision.
-		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') + '?v=3.0.0-4' }),
+		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') + '?v=3.0.0-7' }),
 		E('div', { 'class': 'lucky-heading' }, [
 			E('div', {}, [ E('h2', {}, _('Lucky')), E('p', {}, _('Service and admin panel')) ]),
 			E('button', {
@@ -355,6 +523,30 @@ function renderDashboard() {
 					}, _('Reset admin credentials'))
 				])
 			])
+		]),
+		E('section', { 'class': 'lucky-panel', 'aria-label': _('Core maintenance') }, [
+			E('h3', {}, _('Core maintenance')),
+			textRow(_('Core file status'), 'lucky-core-health'),
+			E('p', { 'class': 'lucky-hint' }, _('Repair missing execution permissions, or upload a trusted Lucky Linux tar.gz release to install or replace the core. Configuration is preserved. Archive limit: 64 MiB.')),
+			E('div', { 'class': 'lucky-actions' }, [
+				E('button', { 'type': 'button', 'id': 'lucky-core-fix', 'class': 'btn cbi-button', 'click': function() { return coreMaintenance(false); } }, _('Repair execution permissions')),
+				E('button', { 'type': 'button', 'id': 'lucky-core-upload', 'class': 'btn cbi-button cbi-button-action', 'click': function() { return coreMaintenance(true); } }, _('Upload core'))
+			])
+		]),
+		E('section', { 'class': 'lucky-panel', 'aria-label': _('Configuration backup and restore') }, [
+			E('h3', {}, _('Configuration backup and restore')),
+			E('p', { 'class': 'lucky-hint' }, _('Back up every file in the saved configuration directory. Restore replaces the entire directory. Lucky is stopped during the operation and restarted only if it was running.')),
+			E('p', { 'class': 'lucky-hint' }, _('Only LuCI full-directory ZIP backups are supported here, not backups exported by the Lucky admin panel. ZIP limit: 64 MiB; up to 10000 entries.')),
+			E('p', { 'class': 'lucky-hint' }, _('Restore is allowed only into an empty directory or one containing a regular .lkcf file at its root. You will review the file changes before confirming.')),
+			E('div', { 'class': 'lucky-actions' }, [
+				E('button', { 'type': 'button', 'id': 'lucky-backup', 'class': 'btn cbi-button cbi-button-action',
+					'click': function() { return configurationArchive(false); } }, _('Download backup')),
+				E('button', { 'type': 'button', 'id': 'lucky-restore', 'class': 'btn cbi-button cbi-button-negative',
+					'click': function() { return configurationArchive(true); } }, _('Restore backup')),
+				E('button', { 'type': 'button', 'id': 'lucky-clear', 'class': 'btn cbi-button cbi-button-negative',
+					'click': function() { return configurationArchive('clear'); } }, _('Clear configuration'))
+			]),
+			E('p', { 'id': 'lucky-backup-status', 'class': 'lucky-hint', 'role': 'status', 'aria-live': 'polite' })
 		])
 	]);
 
