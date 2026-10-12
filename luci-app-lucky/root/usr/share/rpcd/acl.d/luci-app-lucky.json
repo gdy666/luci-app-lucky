@@ -3,6 +3,9 @@
     "description": "Grant access to the Lucky administration page",
     "read": {
       "file": {
+        "/usr/libexec/lucky-watchdog status": [
+          "exec"
+        ],
         "/usr/libexec/lucky-call info": [
           "exec"
         ],
@@ -17,6 +20,9 @@
         ],
         "/usr/libexec/lucky-backup core-status": [
           "exec"
+        ],
+        "/usr/libexec/lucky-diagnostics read": [
+          "exec"
         ]
       },
       "uci": [
@@ -25,6 +31,12 @@
     },
     "write": {
       "file": {
+        "/usr/libexec/lucky-watchdog enable": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-watchdog disable": [
+          "exec"
+        ],
         "/usr/libexec/lucky-call service start": [
           "exec"
         ],

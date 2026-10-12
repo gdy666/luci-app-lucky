@@ -182,17 +182,18 @@ local function probe(path, work)
  must(type(info) == "table" and type(info.Version) == "string" and #info.Version > 0 and #info.Version <= 100, "Not a supported Lucky core (-info failed)")
  return info.Version, type(info.Date) == "string" and info.Date:sub(1, 100) or "-"
 end
+local function available_memory()
+ local mem = read("/proc/meminfo", 8192)
+ return tonumber(mem:match("MemAvailable:%s*(%d+)")) or tonumber(mem:match("MemFree:%s*(%d+)")) or 0
+end
 function M.status()
  local st = fs.lstat(BIN)
  local status = not st and "missing" or (st.type ~= "reg" and "unsafe" or (fs.access(BIN, "x") and "ready" or "permissions"))
- return { status = status, path = BIN }
+ return { status = status, path = BIN, available_memory_kib = available_memory() }
 end
 function M.version(work)
  -- Avoid launching another packed core under memory pressure just to enable an editor.
- local mem = read("/proc/meminfo")
- local available = tonumber(mem:match("MemAvailable:%s*(%d+)"))
- if not available then available = (tonumber(mem:match("MemFree:%s*(%d+)")) or 0) end
- must(available >= 192 * 1024, "Not enough available memory to check core version; stop Lucky and retry")
+ must(available_memory() >= 192 * 1024, "Not enough available memory to check core version; stop Lucky and retry")
  return probe(BIN, work), digest(BIN)
 end
 function M.fingerprint() return digest(BIN) end

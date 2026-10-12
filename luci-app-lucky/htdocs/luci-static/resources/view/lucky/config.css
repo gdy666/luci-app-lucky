@@ -246,6 +246,95 @@
 	margin:0;
 }
 
+.lucky-page .lucky-watchdog-row {
+	display:flex;
+	align-items:center;
+	justify-content:space-between;
+	flex-wrap:wrap;
+	gap:.8rem;
+	padding:.8rem 0;
+	border-bottom:1px solid rgba(128,128,128,.12);
+}
+
+.lucky-page .lucky-watchdog-row label {
+	float:none;
+	width:auto;
+	margin:0;
+	padding:0;
+	color:inherit;
+	line-height:1.6;
+}
+
+.lucky-page #lucky-watchdog-toggle {
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	flex-shrink:0;
+	min-width:8.5rem;
+	min-height:44px;
+	padding:.5rem .85rem;
+	border:1px solid #788391;
+	border-radius:6px;
+	background:rgba(128,128,128,.1);
+	color:inherit;
+	font:inherit;
+	font-weight:600;
+	line-height:1.5;
+	text-shadow:none;
+	box-shadow:none;
+	cursor:pointer;
+}
+
+.lucky-page #lucky-watchdog-toggle .lucky-switch-track {
+	position:relative;
+	display:inline-block;
+	flex-shrink:0;
+	width:2.25rem;
+	height:1.25rem;
+	margin-right:.6rem;
+	border-radius:1rem;
+	background:#687586;
+}
+
+.lucky-page #lucky-watchdog-toggle .lucky-switch-track::after {
+	content:"";
+	position:absolute;
+	top:.1875rem;
+	left:.1875rem;
+	width:.875rem;
+	height:.875rem;
+	border-radius:50%;
+	background:#fff;
+}
+
+.lucky-page #lucky-watchdog-toggle[aria-checked="true"] {
+	border-color:#2864bd;
+	background:#2864bd;
+	color:#fff;
+}
+
+.lucky-page #lucky-watchdog-toggle[aria-checked="true"] .lucky-switch-track {
+	background:rgba(0,0,0,.25);
+}
+
+.lucky-page #lucky-watchdog-toggle[aria-checked="true"] .lucky-switch-track::after {
+	left:1.1875rem;
+}
+
+.lucky-page #lucky-watchdog-toggle:hover:not(:disabled) {
+	border-color:#2864bd;
+	box-shadow:0 0 0 1px #2864bd;
+}
+
+.lucky-page #lucky-watchdog-toggle:disabled {
+	opacity:.55;
+	cursor:not-allowed;
+}
+
+.lucky-page #lucky-watchdog-toggle[aria-busy="true"] {
+	cursor:progress;
+}
+
 .lucky-page .lucky-reset {
 	display:flex;
 	align-items:center;
@@ -327,3 +416,6 @@
 .lucky-page [role="tabpanel"][hidden] { display:none !important; }
 .lucky-page .lucky-rules-text { display:block; box-sizing:border-box; width:100%; max-width:100%; margin:.5rem 0 1rem; padding:.75rem; font-family:monospace; resize:vertical; }
 .lucky-page .lucky-tabs [role="tab"]:focus-visible { outline:2px solid #2874cc; outline-offset:-2px; }
+
+.lucky-page .lucky-diagnostics summary { cursor:pointer; font-weight:600; line-height:1.5; padding:.2rem 0; }
+.lucky-page .lucky-log-text { min-width:0; max-height:30rem; line-height:1.6; white-space:pre-wrap; overflow-wrap:break-word; color:inherit; background:transparent; }

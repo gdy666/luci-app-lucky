@@ -17,22 +17,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install static-check dependencies
-        run: sudo apt-get update && sudo apt-get install -y gettext
+        run: sudo apt-get update && sudo apt-get install -y gettext lua5.1
       - name: Validate source files
         shell: bash
         run: |
           set -eu
           go install mvdan.cc/sh/v3/cmd/shfmt@v3.11.0
           "$(go env GOPATH)/bin/shfmt" -d -sr -s \
-            lucky/files/lucky.init lucky/files/lucky-call scripts/build-sdk.sh
+            lucky/files/lucky.init lucky/files/lucky-call lucky/files/lucky-watchdog scripts/build-sdk.sh
           sh -n lucky/files/lucky.init
           sh -n lucky/files/lucky-call
+          sh -n lucky/files/lucky-watchdog
           bash -n scripts/build-sdk.sh
           node -e "const fs=require('fs'); for (const f of process.argv.slice(1)) JSON.parse(fs.readFileSync(f));" \
             luci-app-lucky/root/usr/share/luci/menu.d/luci-app-lucky.json \
             luci-app-lucky/root/usr/share/rpcd/acl.d/luci-app-lucky.json
           node -e "new Function(require('fs').readFileSync(process.argv[1], 'utf8'));" \
             luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js
+          node scripts/test-lucky-view.js
+          LUA_PATH='./luci-app-lucky/root/usr/lib/lua/?.lua;;' \
+            lua5.1 scripts/test-lucky-diagnostics.lua --parse-only
           msgfmt --check --check-compatibility -o /dev/null luci-app-lucky/po/zh_Hans/lucky.po
           python3 scripts/check-po.py luci-app-lucky/po/zh_Hans/lucky.po \
             luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js

@@ -283,18 +283,6 @@ msgstr "正在校验核心升级包与架构…"
 msgid "Replace core"
 msgstr "替换核心"
 
-msgid "New core version: %s"
-msgstr "新核心版本：%s"
-
-msgid "Only /usr/bin/lucky will be replaced. Lucky will stop during replacement and resume only if it was running. Configuration files are preserved."
-msgstr "仅替换 /usr/bin/lucky。替换期间会停止 Lucky，原本运行时将自动启动，配置文件保持不变。"
-
-msgid "Replacing core…"
-msgstr "正在替换核心…"
-
-msgid "Core replaced."
-msgstr "核心已替换。"
-
 msgid "Core execution permissions repaired."
 msgstr "核心执行权限已修复。"
 
@@ -372,3 +360,105 @@ msgstr "绝对白名单，优先于全局黑名单。仅接受单个 IP，可用
 
 msgid "Custom LAN IPs and CIDR networks replace built-in networks. Do not add public networks unless intended. Fill defaults to restore the standard LAN ranges."
 msgstr "自定义内网 IP 与 CIDR 网段会替代内置网段，请谨慎添加公网地址。可填入默认网段后保存，恢复标准内网范围。"
+
+msgid "Reading recent logs…"
+msgstr "正在读取最近日志…"
+
+msgid "Unable to read diagnostics."
+msgstr "无法读取诊断日志。"
+
+msgid "OOM: Lucky was selected for termination"
+msgstr "OOM：内核记录 Lucky 被选中终止"
+
+msgid "Crash evidence"
+msgstr "崩溃线索"
+
+msgid "Repeated exits / restart limit"
+msgstr "反复退出 / 达到重启限制"
+
+msgid "Exit record; cause unknown"
+msgstr "退出记录，原因未知"
+
+msgid "Read successfully"
+msgstr "读取成功"
+
+msgid "Tool unavailable"
+msgstr "工具不可用"
+
+msgid "Read failed or permission denied"
+msgstr "读取失败或权限不足"
+
+msgid "Read timed out; results may be incomplete"
+msgstr "读取超时，结果可能不完整"
+
+msgid "Scan limit reached; results may be incomplete"
+msgstr "达到扫描上限，结果可能不完整"
+
+msgid "Only a bounded recent excerpt is retained."
+msgstr "仅保留有限的最近日志片段。"
+
+msgid "Related excerpts: %s"
+msgstr "相关日志片段：%s"
+
+msgid "No matching records found; this does not rule out an unexpected exit."
+msgstr "未找到相关记录，但不能据此排除曾发生异常退出。"
+
+msgid "Last read: %s"
+msgstr "上次读取：%s"
+
+msgid "Logs copied."
+msgstr "日志已复制。"
+
+msgid "Logs selected. Use your browser copy command."
+msgstr "日志已选中，请使用浏览器的复制操作。"
+
+msgid "Recent unexpected exit logs"
+msgstr "最近异常退出日志"
+
+msgid "Read on demand only. Reboots or log rotation can erase records. These excerpts do not prove the cause of the latest stop; service actions can also produce exit records."
+msgstr "仅按需读取；重启或日志轮转可能清除记录。这些片段不一定对应最近一次停止，服务操作也可能产生退出记录。"
+
+msgid "Each source keeps its own log order and timestamps. Excerpts and stack traces may be shortened. Check for private information before sharing."
+msgstr "各来源分别保留日志顺序和时间，片段与堆栈可能截短。对外分享前请检查是否包含隐私信息。"
+
+msgid "Refresh logs"
+msgstr "刷新日志"
+
+msgid "Copy logs"
+msgstr "复制日志"
+
+msgid "Expand to read recent logs."
+msgstr "展开后读取最近日志。"
+
+msgid "Not enough available memory for core queries. Stop Lucky and refresh to retry. Service status and logs remain available."
+msgstr "可用内存不足，已跳过核心信息查询。可停止 Lucky 后刷新重试；仍可查看服务状态和异常日志。"
+
+msgid "Unable to read recovery settings. Install the matching updated Lucky core package."
+msgstr "无法读取自动恢复设置，请安装配套更新的 Lucky 核心软件包。"
+
+msgid "Recovery enabled"
+msgstr "已开启"
+
+msgid "Recovery disabled"
+msgstr "已关闭"
+
+msgid "Updating recovery…"
+msgstr "切换中…"
+
+msgid "Scheduled recovery is unavailable. Switch it off and on again to repair it."
+msgstr "计划任务未正常启用，请关闭后重新开启以修复。"
+
+msgid "Paused after stopping Lucky. Start Lucky to resume recovery."
+msgstr "Lucky 已主动停止，自动恢复已暂停；再次启动后恢复守护。"
+
+msgid "Checks every minute; repeated recovery attempts are at least five minutes apart."
+msgstr "每分钟检查一次；反复异常时，至少间隔 5 分钟再次尝试恢复。"
+
+msgid "Scheduled recovery is off."
+msgstr "计划任务自动恢复已关闭。"
+
+msgid "Recover after unexpected exit"
+msgstr "意外退出自动恢复"
+
+msgid "Adds a fallback to system supervision. Manual stop and maintenance pause recovery. Uninstalling the Lucky core package removes its scheduled task."
+msgstr "作为系统进程守护的额外保障。主动停止或维护期间暂停恢复；卸载 Lucky 核心软件包时会清理它创建的计划任务。"

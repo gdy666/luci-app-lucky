@@ -8,7 +8,7 @@ const source = fs.readFileSync(path.join(__dirname,
 	'../luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js'), 'utf8');
 
 function fixture() {
-	const nodes = {}, calls = {}, timers = [], archiveCalls = [], notices = [];
+	const nodes = {}, calls = {}, timers = [], archiveCalls = [], notices = [], watchdogCalls = [];
 	function E(tag, attrs, children) {
 		const node = Object.assign({ tag, textContent: children, disabled: false,
 			style: {}, setAttribute(k, v) { this[k] = v; },
@@ -37,7 +37,14 @@ function fixture() {
 			declare(options) {
 				assert.equal(options.nobatch, true, 'status must not wait for a batch of slow queries');
 				return (command, args) => new Promise((resolve, reject) => {
-					if (args[0] === 'core-status') { resolve({ code: 0, stdout: JSON.stringify({ ok: true, status: context.coreStatus || 'ready' }) }); return; }
+					if (command === '/usr/libexec/lucky-watchdog') {
+						if (args[0] === 'status') {
+							if (context.oldCorePackage) { reject(new Error('Not found')); return; }
+							resolve({ code: 0, stdout: JSON.stringify(context.watchdogData || {enabled:false,scheduled:false,paused:false,cron_running:true}) });
+						} else watchdogCalls.push({ operation:args[0], resolve, reject });
+						return;
+					}
+					if (args[0] === 'core-status') { resolve({ code: 0, stdout: JSON.stringify({ ok: true, status: context.coreStatus || 'ready', available_memory_kib: context.availableMemory === undefined ? 512 * 1024 : context.availableMemory }) }); return; }
 					calls[args[0]] = { resolve, reject };
 				});
 			},
@@ -47,12 +54,13 @@ function fixture() {
 	vm.createContext(context);
 	vm.runInContext("String.prototype.format = function(v) { return this.replace('%s', v); };", context);
 	const view = vm.runInContext('(function() {\n' + source + '\n})()', context);
-	return { view, nodes, calls, timers, archiveCalls, notices, context };
+	return { view, nodes, calls, timers, archiveCalls, notices, context, watchdogCalls };
 }
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	stdout: typeof value === 'string' ? value : JSON.stringify(value) });
+const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in frontend test'); process.exit(1); }, 10000);
 
 (async () => {
 	const f = fixture();
@@ -60,6 +68,7 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	assert.deepEqual(Object.keys(f.calls), [], 'render must finish before launching slow queries');
 	assert.equal(f.nodes['lucky-port'].disabled, true);
 	const loading = f.timers[0]();
+	assert.equal(f.calls.info, undefined, 'packed-core queries must not run concurrently');
 	reply(f, 'status', 'true');
 	reply(f, 'arch', 'x86_64');
 	await flush();
@@ -88,7 +97,9 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	assert.equal(f.calls.status, pendingStatus, 'repeated clicks must not launch duplicate queries');
 	reply(f, 'status', 'false');
 	reply(f, 'arch', 'x86_64');
+	await flush();
 	reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } });
+	await flush();
 	reply(f, 'info', { Version: '2.27.3' });
 	await refreshed;
 	assert.equal(f.nodes['lucky-refresh'].textContent, 'Refresh');
@@ -103,10 +114,12 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	const failed = fixture();
 	await failed.view.render();
 	const failure = failed.timers[0]();
+	await flush();
 	reply(failed, 'status', 'true');
 	reply(failed, 'arch', 'x86_64');
-	reply(failed, 'info', { Version: '2.27.2' });
 	failed.calls.base.resolve(6);
+	await flush();
+	reply(failed, 'info', { Version: '2.27.2' });
 	await failure;
 	assert.equal(failed.nodes['lucky-running'].textContent, 'Running');
 	assert.equal(failed.nodes['lucky-port'].disabled, true);
@@ -129,7 +142,7 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	f.archiveCalls[2].reply({ ok: true });
 	await flush();
 	reply(f, 'status', 'false'); reply(f, 'arch', 'x86_64');
-	reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } }); reply(f, 'info', { Version: '2.27.3' });
+	reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } }); await flush(); reply(f, 'info', { Version: '2.27.3' });
 	await restore;
 	assert.equal(f.nodes['lucky-restore'].disabled, false);
 	assert.equal(f.nodes['lucky-service-start'].disabled, false);
@@ -160,7 +173,7 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 		f.archiveCalls[i].reply({ ok: true });
 		await flush();
 		reply(f, 'status', 'false'); reply(f, 'arch', 'x86_64');
-		reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } }); reply(f, 'info', { Version: '2.27.3' });
+		reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } }); await flush(); reply(f, 'info', { Version: '2.27.3' });
 		await clearing;
 		assert.equal(f.nodes['lucky-clear'].disabled, false);
 	}
@@ -168,8 +181,10 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	const missing = fixture(); missing.context.coreStatus = 'missing';
 	await missing.view.render();
 	const missingLoad = missing.timers[0]();
-	missing.calls.info.resolve({ code: 127, stderr: 'Lucky is not installed' });
+	await flush();
 	missing.calls.base.resolve({ code: 127, stderr: 'Lucky is not installed' });
+	await flush();
+	missing.calls.info.resolve({ code: 127, stderr: 'Lucky is not installed' });
 	reply(missing, 'status', 'false'); reply(missing, 'arch', 'x86_64'); await missingLoad;
 	assert.equal(missing.nodes['lucky-core-upload'].disabled, false, 'missing core must not block upload');
 	assert.equal(missing.nodes['lucky-core-fix'].disabled, true);
@@ -182,7 +197,7 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	missing.archiveCalls[j++].reply({ ok: false, error: 'Wrong architecture' }); await flush();
 	assert.equal(missing.archiveCalls[j].operation, 'cleanup');
 	missing.archiveCalls[j].reply({ ok: true }); await flush();
-	missing.calls.info.resolve({ code: 127 }); missing.calls.base.resolve({ code: 127 });
+	missing.calls.base.resolve({ code: 127 }); await flush(); missing.calls.info.resolve({ code: 127 });
 	reply(missing, 'status', 'false'); reply(missing, 'arch', 'x86_64'); await uploadCore;
 	assert.equal(missing.archiveCalls.some(c => c.operation === 'core-install'), false);
 	console.log('PASS: missing core allows upload; invalid core never reaches replacement');
@@ -207,7 +222,6 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 		assert.equal(f.archiveCalls[i].operation, 'cleanup');
 		f.archiveCalls[i].reply({ ok: true }); await flush();
 		reply(f, 'status', 'false'); reply(f, 'arch', 'x86_64');
-		reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } }); reply(f, 'info', { Version: '3.2.1' });
 		await upgrade;
 		assert.equal(f.calls.info, previousInfo, 'must not spawn metadata query alongside restarted service');
 		assert.equal(f.calls.base, previousBase, 'must not spawn configuration query alongside restarted service');
@@ -233,6 +247,83 @@ const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
 	assert.equal(f.archiveCalls[r].operation, 'cleanup'); f.archiveCalls[r].reply({ok:true}); await saving;
 	assert.equal(f.nodes['lucky-rules-save-localips'].disabled, true);
 	console.log('PASS: accessible tabs preserve edits; version gate and staged rules save work');
+	assert.equal(f.calls.read, undefined, 'diagnostics must not run on initial load, refresh or maintenance');
+	assert.equal(f.nodes['lucky-diagnostics-refresh'].disabled, false);
+	f.nodes['lucky-diagnostics'].open = true;
+	const diagnostics = f.nodes['lucky-diagnostics'].toggle();
+	assert.equal(f.nodes['lucky-diagnostics-refresh'].disabled, true);
+	const pendingLogs = f.calls.read;
+	await f.nodes['lucky-diagnostics-refresh'].click();
+	assert.equal(f.calls.read, pendingLogs, 'duplicate reads must coalesce');
+	reply(f, 'read', {sources:[{name:'logread',status:'ok'},{name:'dmesg',status:'failed'}],
+		events:[{source:'logread',kind:'crash',text:'panic: <script>alert(1)</script>'}]});
+	await diagnostics;
+	assert.match(f.nodes['lucky-diagnostics-text'].value, /panic: <script>/, 'logs remain plain textarea text');
+	assert.match(f.nodes['lucky-diagnostics-text'].value, /Read failed or permission denied/);
+	assert.equal(f.nodes['lucky-diagnostics-copy'].disabled, false);
+	f.nodes['lucky-diagnostics'].open = false; f.nodes['lucky-diagnostics'].toggle();
+	f.nodes['lucky-diagnostics'].open = true; f.nodes['lucky-diagnostics'].toggle();
+	assert.equal(f.calls.read, pendingLogs, 'reopening must reuse the displayed snapshot');
+	let selected = false;
+	f.nodes['lucky-diagnostics-text'].focus = () => {};
+	f.nodes['lucky-diagnostics-text'].select = () => { selected = true; };
+	f.context.document.execCommand = () => false;
+	f.nodes['lucky-diagnostics-copy'].click();
+	assert.equal(selected, true, 'HTTP browsers need a manual copy fallback');
+	assert.match(f.nodes['lucky-diagnostics-status'].textContent, /Use your browser copy command/);
+	const logFailure = f.nodes['lucky-diagnostics-refresh'].click();
+	f.calls.read.reject(new Error('Permission denied')); await logFailure;
+	assert.equal(f.nodes['lucky-diagnostics-text'].value, '', 'clear stale excerpts after failure');
+	assert.equal(f.nodes['lucky-diagnostics-copy'].disabled, true);
+	assert.equal(f.nodes['lucky-diagnostics-refresh'].disabled, false);
+	const logRetry = f.nodes['lucky-diagnostics-refresh'].click();
+	reply(f, 'read', {sources:[{name:'logread',status:'ok'}],events:{}}); await logRetry;
+	assert.match(f.nodes['lucky-diagnostics-text'].value, /No matching records found/);
+	assert.equal(f.timers.length, 1, 'logs must not add periodic timers');
+	console.log('PASS: diagnostics load lazily, coalesce reads, preserve plain text, support HTTP copying and retry failures');
 	console.log('PASS: nonblocking render, independent status, safe controls, preserved edits, RPC failure');
 	console.log('PASS: maintenance disables edits, rejects invalid ZIP before restore and cleans up uploads');
-})().catch(err => { console.error(err); process.exitCode = 1; });
+	console.log('PASS: packed-core queries run sequentially, including recovery after a failed configuration query');
+	for (const available of [0, 128 * 1024 - 1, null]) {
+		const low = fixture(); low.context.availableMemory = available;
+		await low.view.render(); const loading = low.timers[0]();
+		const running = available !== 0;
+		reply(low, 'status', String(running)); reply(low, 'arch', 'x86_64'); await loading;
+		assert.equal(low.calls.base, undefined, 'low/unknown memory must not start a packed core');
+		assert.equal(low.calls.info, undefined);
+		assert.equal(low.nodes['lucky-running'].textContent, running ? 'Running' : 'Stopped');
+		assert.equal(low.nodes['lucky-service-start'].disabled, running, 'a skipped query must not block starting a stopped core');
+		assert.equal(low.nodes['lucky-backup'].disabled, false, 'backup must remain available without querying the binary');
+		assert.match(low.nodes['lucky-install'].textContent, /Not enough available memory/);
+		assert.equal(low.nodes['lucky-refresh'].disabled, false);
+		assert.equal(low.nodes['lucky-diagnostics-refresh'].disabled, false);
+		const logs = low.nodes['lucky-diagnostics-refresh'].click();
+		reply(low, 'read', {sources:[{name:'logread',status:'ok'}],events:[]}); await logs;
+		assert.match(low.nodes['lucky-diagnostics-text'].value, /No matching records/);
+	}
+	console.log('PASS: low-memory protection skips core execution while status and diagnostics remain usable');
+	const w = fixture(); w.context.availableMemory = 0;
+	await w.view.render();
+	const wl = w.timers[0](); reply(w, 'status', 'false'); reply(w, 'arch', 'x86_64'); await wl;
+	assert.equal(w.nodes['lucky-watchdog-toggle']['aria-checked'], 'false');
+	const on = w.nodes['lucky-watchdog-toggle'].click();
+	assert.equal(w.watchdogCalls[0].operation, 'enable');
+	assert.equal(w.nodes['lucky-watchdog-toggle'].disabled, true);
+	await w.nodes['lucky-watchdog-toggle'].click();
+	assert.equal(w.watchdogCalls.length, 1, 'duplicate toggle must not race the crontab update');
+	w.context.watchdogData = {enabled:true,scheduled:true,paused:true,cron_running:true};
+	w.watchdogCalls[0].resolve({code:0, stdout:JSON.stringify(w.context.watchdogData)}); await on;
+	assert.equal(w.nodes['lucky-watchdog-toggle']['aria-checked'], 'true');
+	assert.match(w.nodes['lucky-watchdog-status'].textContent, /Paused after stopping/);
+	assert.equal(w.calls.service, undefined, 'enabling recovery must never start a manually stopped service');
+	const off = w.nodes['lucky-watchdog-toggle'].click();
+	assert.equal(w.watchdogCalls[1].operation, 'disable');
+	w.watchdogCalls[1].reject(new Error('Read-only filesystem')); await off;
+	assert.equal(w.nodes['lucky-watchdog-toggle']['aria-checked'], 'true', 'failed toggle must reload the actual state');
+	w.context.oldCorePackage = true;
+	const old = w.nodes['lucky-refresh'].click(); reply(w, 'status', 'false'); reply(w, 'arch', 'x86_64'); await old;
+	assert.equal(w.nodes['lucky-watchdog-toggle'].disabled, true);
+	assert.match(w.nodes['lucky-watchdog-status'].textContent, /updated Lucky core package/);
+	assert.equal(w.nodes['lucky-service-start'].disabled, false, 'old service packages must retain normal controls');
+	console.log('PASS: recovery toggle does not start Lucky; duplicate clicks, failed writes and old core packages handled');
+})().catch(err => { console.error(err); process.exitCode = 1; }).finally(() => clearTimeout(watchdog));

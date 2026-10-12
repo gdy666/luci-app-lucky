@@ -18,6 +18,7 @@ var callHelper = rpc.declare({
 var resetInProgress = false;
 var refreshInProgress = false;
 var backupInProgress = false;
+var watchdogState = { ready: false, busy: false, data: null, error: null };
 var state = {
 	installed: false,
 	core: "unknown",
@@ -71,15 +72,43 @@ function loadState() {
 		state.error = err && err.message ? err.message : _('Unable to load Lucky data.');
 		updateDashboard(false);
 	}
+	var coreQuery = helper([ 'core-status' ], '/usr/libexec/lucky-backup').then(function(value) {
+		var core = parseJSON(value, 'Core status');
+		if (!core.ok) throw new Error(core.error || _('Unable to inspect core.'));
+		state.core = core.status;
+		state.installed = core.status === 'ready';
+		updateDashboard(false);
+		return core;
+	}).catch(function(err) { state.core = 'unknown'; failed(err); });
+	function queryCore(operation) {
+		return coreQuery.then(function(core) {
+			if (!core) throw new Error(_('Unable to inspect core.'));
+			// A single packed-core query can still exhaust 128/256 MiB devices.
+			// Skip it when headroom is low; status and log reads never run the core.
+			if (typeof core.available_memory_kib !== 'number' || core.available_memory_kib < 128 * 1024)
+				throw new Error(_('Not enough available memory for core queries. Stop Lucky and refresh to retry. Service status and logs remain available.'));
+			return helper([ operation ]);
+		});
+	}
+	// Each query launches the core. Packed binaries can exhaust a small router
+	// when both run together, so finish the configuration query before -info.
+	// Fast status/architecture reads stay independent of these two queries.
+	var baseQuery = queryCore('base').then(function(value) {
+		var base = parseJSON(value, 'Lucky -baseConfInfo');
+		var config = base.BaseConfigure || {};
+		var port = Number(config.AdminWebListenPort);
+		state.installed = true;
+		state.configReady = true;
+		state.port = Math.floor(port) === port && port >= 1 && port <= 65535 ? port : 16601;
+		state.safeURL = typeof config.SafeURL === 'string' ? config.SafeURL : '';
+		state.allowInternet = config.AllowInternetaccess === true;
+		updateDashboard(true);
+	}).catch(failed);
 
 	return Promise.all([
-		helper([ 'core-status' ], '/usr/libexec/lucky-backup').then(function(value) {
-			var core = parseJSON(value, 'Core status');
-			if (!core.ok) throw new Error(core.error || _('Unable to inspect core.'));
-			state.core = core.status;
-			updateDashboard(false);
-		}).catch(function(err) { state.core = 'unknown'; failed(err); }),
-		helper([ 'info' ]).then(function(value) {
+		loadWatchdog(),
+		coreQuery,
+		baseQuery.then(function() { return queryCore('info'); }).then(function(value) {
 			var info = parseJSON(value, 'Lucky -info');
 			state.installed = true;
 			state.infoReady = true;
@@ -87,17 +116,7 @@ function loadState() {
 			state.date = info.Date || '-';
 			updateDashboard(false);
 		}).catch(failed),
-		helper([ 'base' ]).then(function(value) {
-			var base = parseJSON(value, 'Lucky -baseConfInfo');
-			var config = base.BaseConfigure || {};
-			var port = Number(config.AdminWebListenPort);
-			state.installed = true;
-			state.configReady = true;
-			state.port = Math.floor(port) === port && port >= 1 && port <= 65535 ? port : 16601;
-			state.safeURL = typeof config.SafeURL === 'string' ? config.SafeURL : '';
-			state.allowInternet = config.AllowInternetaccess === true;
-			updateDashboard(true);
-		}).catch(failed),
+		baseQuery,
 		helper([ 'status' ]).then(function(value) {
 			state.running = value === 'true';
 			state.runtimeReady = true;
@@ -118,6 +137,57 @@ function loadState() {
 function notifyError(err) {
 	var message = err && err.message ? err.message : _('The operation failed.');
 	ui.addNotification(null, E('p', {}, message));
+}
+
+function loadWatchdog() {
+	return helper([ 'status' ], '/usr/libexec/lucky-watchdog').then(function(value) {
+		watchdogState.data = parseJSON(value, 'Watchdog');
+		watchdogState.ready = true;
+		watchdogState.error = null;
+	}).catch(function() {
+		watchdogState.ready = false;
+		watchdogState.error = _('Unable to read recovery settings. Install the matching updated Lucky core package.');
+	}).then(updateWatchdog);
+}
+
+function updateWatchdog() {
+	var button = document.getElementById('lucky-watchdog-toggle');
+	var text = document.getElementById('lucky-watchdog-text');
+	var status = document.getElementById('lucky-watchdog-status');
+	if (!button || !text || !status) return;
+	var data = watchdogState.data || {};
+	var enabled = data.enabled === true;
+	text.textContent = watchdogState.busy ? _('Updating recovery…') :
+		enabled ? _('Recovery enabled') : _('Recovery disabled');
+	button.setAttribute('aria-checked', enabled ? 'true' : 'false');
+	button.setAttribute('aria-busy', watchdogState.busy ? 'true' : 'false');
+	button.disabled = !watchdogState.ready || watchdogState.busy || refreshInProgress || backupInProgress || resetInProgress;
+	var message = _('Scheduled recovery is off.');
+	if (enabled) {
+		message = data.paused ? _('Paused after stopping Lucky. Start Lucky to resume recovery.') :
+			_('Checks every minute; repeated recovery attempts are at least five minutes apart.');
+		if (!data.scheduled || !data.cron_running)
+			message = _('Scheduled recovery is unavailable. Switch it off and on again to repair it.');
+	}
+	status.textContent = watchdogState.error || (!watchdogState.ready ? _('Collecting data…') : message);
+}
+
+function toggleWatchdog() {
+	if (!watchdogState.ready || watchdogState.busy || refreshInProgress || backupInProgress || resetInProgress)
+		return Promise.resolve();
+	watchdogState.busy = true;
+	updateWatchdog();
+	var operation = watchdogState.data.enabled ? 'disable' : 'enable';
+	return helper([ operation ], '/usr/libexec/lucky-watchdog').then(function(value) {
+		watchdogState.data = parseJSON(value, 'Watchdog');
+		watchdogState.error = null;
+	}).catch(function(err) {
+		notifyError(err);
+		return loadWatchdog();
+	}).then(function() {
+		watchdogState.busy = false;
+		updateWatchdog();
+	});
 }
 
 function action(args, successMessage) {
@@ -235,6 +305,7 @@ function updateDashboard(updateInputs) {
 	setDisabled('lucky-clear', !state.installed || refreshInProgress || resetInProgress || backupInProgress);
 	updateRuntimeStatus();
 	updateRuleEditors();
+	updateWatchdog();
 }
 
 function archiveCall(operation, token) {
@@ -263,6 +334,7 @@ function coreMaintenance(upload) {
 	backupInProgress = true;
 	var token, saved = [];
 	Array.prototype.forEach.call(document.querySelectorAll('.lucky-page button, .lucky-page input, .lucky-page select'), function(node) {
+		if (node.id && node.id.indexOf('lucky-diagnostics-') === 0) return;
 		saved.push([node, node.disabled]); node.disabled = true;
 	});
 	return (upload ? archiveCall('core-prepare').then(function(result) {
@@ -348,6 +420,7 @@ function configurationArchive(restore) {
 	backupInProgress = true;
 	var token, savedButtons = [];
 	Array.prototype.forEach.call(document.querySelectorAll('.lucky-page button, .lucky-page input, .lucky-page select'), function(node) {
+		if (node.id && node.id.indexOf('lucky-diagnostics-') === 0) return;
 		savedButtons.push([node, node.disabled]);
 		node.disabled = true;
 	});
@@ -512,10 +585,85 @@ function ruleEditor(key, title, description) {
  ]);
 }
 
+var diagnosticsBusy = false, diagnosticsLoaded = false;
+function readDiagnostics() {
+	if (diagnosticsBusy) return Promise.resolve();
+	diagnosticsBusy = true;
+	setDisabled('lucky-diagnostics-refresh', true);
+	setDisabled('lucky-diagnostics-copy', true);
+	var status = document.getElementById('lucky-diagnostics-status');
+	var output = document.getElementById('lucky-diagnostics-text');
+	status.textContent = _('Reading recent logs…');
+	return helper([ 'read' ], '/usr/libexec/lucky-diagnostics').then(function(value) {
+		var data = parseJSON(value, 'Lucky diagnostics');
+		if (!data || !Array.isArray(data.sources)) throw new Error(_('Unable to read diagnostics.'));
+		var labels = { oom: _('OOM: Lucky was selected for termination'), crash: _('Crash evidence'),
+			restart_loop: _('Repeated exits / restart limit'), exit: _('Exit record; cause unknown') };
+		var sourceStatus = { ok: _('Read successfully'), unavailable: _('Tool unavailable'),
+			failed: _('Read failed or permission denied'), timeout: _('Read timed out; results may be incomplete'),
+			limited: _('Scan limit reached; results may be incomplete') };
+		var events = Array.isArray(data.events) ? data.events : [];
+		var lines = data.sources.map(function(source) {
+			return source.name + ': ' + (sourceStatus[source.status] || _('Unable to read diagnostics.')) +
+				(source.truncated ? ' · ' + _('Only a bounded recent excerpt is retained.') : '');
+		});
+		lines.push('', events.length ? _('Related excerpts: %s').format(events.length) : _('No matching records found; this does not rule out an unexpected exit.'));
+		events.forEach(function(event) {
+			lines.push('', '[' + event.source + ' · ' + (labels[event.kind] || _('Exit record; cause unknown')) + ']', event.text);
+		});
+		output.value = lines.join('\n');
+		status.textContent = _('Last read: %s').format(new Date().toLocaleString());
+		diagnosticsLoaded = true;
+	}).catch(function(err) {
+		status.textContent = _('Unable to read diagnostics.') + ' ' + (err.message || '');
+		// Clear stale data so it cannot be mistaken for a successful fresh read.
+		output.value = '';
+		diagnosticsLoaded = false;
+	}).then(function() {
+		diagnosticsBusy = false;
+		setDisabled('lucky-diagnostics-refresh', false);
+		setDisabled('lucky-diagnostics-copy', !output.value);
+	});
+}
+
+function copyDiagnostics() {
+	var output = document.getElementById('lucky-diagnostics-text');
+	var status = document.getElementById('lucky-diagnostics-status');
+	function fallback() {
+		output.focus(); output.select();
+		var copied = false;
+		try { copied = document.execCommand('copy'); } catch (e) {}
+		status.textContent = copied ? _('Logs copied.') : _('Logs selected. Use your browser copy command.');
+	}
+	if (!output.value || diagnosticsBusy) return;
+	// LuCI is frequently served over HTTP, where the Clipboard API is absent.
+	if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
+		return navigator.clipboard.writeText(output.value).then(function() { status.textContent = _('Logs copied.'); }).catch(fallback);
+	fallback();
+}
+
+function diagnosticsPanel() {
+	return E('section', { 'class': 'lucky-panel' }, [
+		E('details', { 'class': 'lucky-diagnostics', 'id': 'lucky-diagnostics', 'toggle': function() {
+			if (this.open && !diagnosticsLoaded) return readDiagnostics();
+		} }, [
+			E('summary', {}, _('Recent unexpected exit logs')),
+			E('p', { 'class': 'lucky-hint' }, _('Read on demand only. Reboots or log rotation can erase records. These excerpts do not prove the cause of the latest stop; service actions can also produce exit records.')),
+			E('p', { 'class': 'lucky-hint' }, _('Each source keeps its own log order and timestamps. Excerpts and stack traces may be shortened. Check for private information before sharing.')),
+			E('div', { 'class': 'lucky-actions' }, [
+				E('button', { 'type': 'button', 'id': 'lucky-diagnostics-refresh', 'class': 'btn cbi-button', 'click': readDiagnostics }, _('Refresh logs')),
+				E('button', { 'type': 'button', 'id': 'lucky-diagnostics-copy', 'class': 'btn cbi-button', 'disabled': true, 'click': copyDiagnostics }, _('Copy logs'))
+			]),
+			E('p', { 'id': 'lucky-diagnostics-status', 'class': 'lucky-hint', 'role': 'status', 'aria-live': 'polite' }, _('Expand to read recent logs.')),
+			E('textarea', { 'id': 'lucky-diagnostics-text', 'class': 'lucky-rules-text lucky-log-text', 'readonly': true, 'rows': 14, 'spellcheck': false, 'aria-label': _('Recent unexpected exit logs') })
+		])
+	]);
+}
+
 function renderDashboard(formNode) {
 	var dashboard = E('div', { 'class': 'lucky-dashboard' }, [
 		// LuCI versions its view scripts, but custom stylesheet URLs need their own revision.
-		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') + '?v=3.0.0-9' }),
+		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') + '?v=3.0.0-12' }),
 		E('div', { 'class': 'lucky-heading' }, [
 			E('div', {}, [ E('h2', {}, _('Lucky')), E('p', {}, _('Service and admin panel')) ]),
 			E('button', {
@@ -544,6 +692,17 @@ function renderDashboard(formNode) {
 				serviceButton(_('Start'), 'cbi-button-apply', 'start'),
 				serviceButton(_('Restart'), 'cbi-button-reload', 'restart'),
 				serviceButton(_('Stop'), 'cbi-button-reset', 'stop')
+			]),
+			E('div', { 'class': 'lucky-settings' }, [
+				E('div', { 'class': 'lucky-watchdog-row' }, [
+					E('label', { 'id': 'lucky-watchdog-label', 'for': 'lucky-watchdog-toggle' }, _('Recover after unexpected exit')),
+					E('button', { 'type': 'button', 'id': 'lucky-watchdog-toggle', 'class': 'btn cbi-button', 'role': 'switch', 'aria-checked': 'false', 'aria-busy': 'false', 'aria-labelledby': 'lucky-watchdog-label', 'aria-describedby': 'lucky-watchdog-status', 'disabled': true, 'click': toggleWatchdog }, [
+						E('span', { 'class': 'lucky-switch-track', 'aria-hidden': 'true' }),
+						E('span', { 'id': 'lucky-watchdog-text' }, _('Recovery disabled'))
+					])
+				]),
+				E('p', { 'class': 'lucky-hint' }, _('Adds a fallback to system supervision. Manual stop and maintenance pause recovery. Uninstalling the Lucky core package removes its scheduled task.')),
+				E('p', { 'id': 'lucky-watchdog-status', 'class': 'lucky-hint', 'role': 'status', 'aria-live': 'polite' }, _('Collecting data…'))
 			])
 		]),
 		E('section', { 'class': 'lucky-panel', 'aria-label': _('Admin panel') }, [
@@ -629,6 +788,7 @@ function renderDashboard(formNode) {
 			ruleEditor('localips', 'localips', _('Custom LAN IPs and CIDR networks replace built-in networks. Do not add public networks unless intended. Fill defaults to restore the standard LAN ranges.'))
 		]),
 		E('div', {'id':'lucky-tab-panel-maintenance','role':'tabpanel','aria-labelledby':'lucky-tab-maintenance','hidden':true}, [
+		diagnosticsPanel(),
 		E('section', { 'class': 'lucky-panel', 'aria-label': _('Core maintenance') }, [
 			E('h3', {}, _('Core maintenance')),
 			textRow(_('Core file status'), 'lucky-core-health'),
@@ -657,7 +817,7 @@ function renderDashboard(formNode) {
 	]);
 
 	Array.prototype.forEach.call(dashboard.querySelectorAll('button, input'), function(node) {
-		if (node.id && node.id.indexOf('lucky-') === 0 && node.id.indexOf('lucky-tab-') !== 0) node.disabled = true;
+		if (node.id && node.id.indexOf('lucky-') === 0 && node.id.indexOf('lucky-tab-') !== 0 && node.id.indexOf('lucky-diagnostics-') !== 0) node.disabled = true;
 	});
 	// Do not hold LuCI's view loader open while starting the Lucky binary.
 	window.setTimeout(loadState, 0);

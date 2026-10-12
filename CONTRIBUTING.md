@@ -19,9 +19,10 @@ Use a JavaScript View and a validated helper command.
 ## 提交前检查
 
 ```bash
-shfmt -d -sr -s lucky/files/lucky.init lucky/files/lucky-call scripts/build-sdk.sh
+shfmt -d -sr -s lucky/files/lucky.init lucky/files/lucky-call lucky/files/lucky-watchdog scripts/build-sdk.sh
 sh -n lucky/files/lucky.init
 sh -n lucky/files/lucky-call
+sh -n lucky/files/lucky-watchdog
 msgfmt --check --check-compatibility -o /dev/null luci-app-lucky/po/zh_Hans/lucky.po
 python3 scripts/check-po.py luci-app-lucky/po/zh_Hans/lucky.po \
   luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js

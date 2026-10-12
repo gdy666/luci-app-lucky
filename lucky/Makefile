@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=lucky
 PKG_VERSION:=2.27.2
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
@@ -85,12 +85,26 @@ define Package/lucky/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lucky $(1)/usr/bin/lucky
 	$(INSTALL_DIR) $(1)/usr/libexec
 	$(INSTALL_BIN) ./files/lucky-call $(1)/usr/libexec/lucky-call
+	$(INSTALL_BIN) ./files/lucky-watchdog $(1)/usr/libexec/lucky-watchdog
 	$(INSTALL_DIR) $(1)/usr/share/lucky
 	echo '$(LUCKY_ARCH)' > $(1)/usr/share/lucky/arch
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/lucky.init $(1)/etc/init.d/lucky
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/luckyuci $(1)/etc/config/lucky
+endef
+
+define Package/lucky/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] || /usr/libexec/lucky-watchdog sync
+endef
+
+define Package/lucky/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ] && [ "$${PKG_UPGRADE}" != 1 ]; then
+	/etc/init.d/lucky stop
+	/usr/libexec/lucky-watchdog remove
+fi
 endef
 
 $(eval $(call BuildPackage,lucky))
