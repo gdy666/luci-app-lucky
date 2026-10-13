@@ -67,6 +67,21 @@ if [ "$legacy_sdk" = "1" ]; then
 		echo "Unexpected OpenWrt 19.07 luci-base host build rule" >&2
 		exit 2
 	fi
+	# Newer firmware sources functions.sh without marking it executable.
+	# Keep the SDK wrappers and lifecycle hooks, but test readability instead.
+	legacy_ipkg_makefile="include/package-ipkg.mk"
+	sed -i '/echo .*\/lib\/functions\.sh.*exit 0/s/\[ -x /[ -r /' "$legacy_ipkg_makefile"
+	if [ "$(grep -c 'echo .*\[ -r .*\/lib\/functions\.sh.*exit 0' "$legacy_ipkg_makefile")" != "2" ]; then
+		echo "Unexpected OpenWrt 19.07 package lifecycle wrappers" >&2
+		exit 2
+	fi
+	# A dependency may enter the shared recipe through .provides, not the IPK.
+	# Both targets need the package metadata and staging tool PATH.
+	sed -i 's|^\([[:space:]]*\)\(\$\$(IPKG_\$(1)) : export \)|\1$(PKG_INFO_DIR)/$(1).provides \2|' "$legacy_ipkg_makefile"
+	if [ "$(grep -c '^ *$(PKG_INFO_DIR)/$(1).provides .* : export ' "$legacy_ipkg_makefile")" != "3" ]; then
+		echo "Unexpected OpenWrt 19.07 package metadata exports" >&2
+		exit 2
+	fi
 fi
 touch .config
 sed -i '/^CONFIG_PACKAGE_lucky=/d; /^# CONFIG_PACKAGE_lucky is not set$/d' .config

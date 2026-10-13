@@ -37,14 +37,20 @@ var state = {
 };
 
 function helper(args, program) {
-	return callHelper(program || HELPER, args).then(function(res) {
+	var command = program || HELPER;
+	return callHelper(command, args).then(function(res) {
 		if (!res || typeof res !== 'object')
 			throw new Error(rpc.getStatusText(res));
 		if (typeof res.code === 'number' && res.code !== 0) {
-			var detail = (res.stderr || res.stdout || _('The operation failed.')).trim();
+			var detail = (res.stderr || res.stdout || '').trim() ||
+				_('Command failed (exit code %s).').format(res.code);
 			throw new Error(detail.substring(0, 400));
 		}
 		return (res.stdout || '').trim();
+	}).catch(function(err) {
+		// Identify the failed helper without exposing arguments such as safe URLs.
+		throw new Error(command + ' ' + args[0] + ': ' +
+			(err && err.message ? err.message : _('The operation failed.')));
 	});
 }
 
@@ -63,26 +69,29 @@ function loadState() {
 	refreshInProgress = true;
 	state.loading = true;
 	state.error = null;
+	state.core = 'unknown';
+	state.runtimeReady = false;
 	state.configReady = false;
 	state.installed = false;
 	state.infoReady = false;
 	state.version = state.date = "-";
 	updateDashboard(false);
 	function failed(err) {
-		state.error = err && err.message ? err.message : _('Unable to load Lucky data.');
+		// Keep the first cause; dependent and later requests must not hide it.
+		if (!state.error)
+			state.error = err && err.message ? err.message : _('Unable to load Lucky data.');
 		updateDashboard(false);
 	}
 	var coreQuery = helper([ 'core-status' ], '/usr/libexec/lucky-backup').then(function(value) {
 		var core = parseJSON(value, 'Core status');
-		if (!core.ok) throw new Error(core.error || _('Unable to inspect core.'));
+		if (!core || !core.ok) throw new Error(core && core.error || _('Unable to inspect core.'));
 		state.core = core.status;
 		state.installed = core.status === 'ready';
 		updateDashboard(false);
 		return core;
-	}).catch(function(err) { state.core = 'unknown'; failed(err); });
+	});
 	function queryCore(operation) {
 		return coreQuery.then(function(core) {
-			if (!core) throw new Error(_('Unable to inspect core.'));
 			// A single packed-core query can still exhaust 128/256 MiB devices.
 			// Skip it when headroom is low; status and log reads never run the core.
 			if (typeof core.available_memory_kib !== 'number' || core.available_memory_kib < 128 * 1024)
@@ -107,7 +116,7 @@ function loadState() {
 
 	return Promise.all([
 		loadWatchdog(),
-		coreQuery,
+		coreQuery.catch(failed),
 		baseQuery.then(function() { return queryCore('info'); }).then(function(value) {
 			var info = parseJSON(value, 'Lucky -info');
 			state.installed = true;
@@ -204,6 +213,11 @@ function textRow(label, id) {
 	]);
 }
 
+function panelTitle(title) {
+	// Only the page title uses a native h2. Some themes paint every h3 as a banner.
+	return E('div', { 'class': 'lucky-panel-title', 'role': 'heading', 'aria-level': '3' }, title);
+}
+
 function serviceButton(label, css, operation) {
 	return E('button', {
 		'class': 'btn cbi-button ' + css,
@@ -241,7 +255,7 @@ function setDisabled(id, disabled) {
 }
 
 function updateRuntimeStatus() {
-	updateText('lucky-running', !state.runtimeReady ? _('Collecting data…') : (state.running ? _('Running') : _('Stopped')), !state.runtimeReady ? '' : (state.running ? 'success' : 'error'));
+	updateText('lucky-running', !state.runtimeReady ? (state.loading ? _('Collecting data…') : _('Unable to read service status.')) : (state.running ? _('Running') : _('Stopped')), !state.runtimeReady ? '' : (state.running ? 'success' : 'error'));
 
 	var link = document.getElementById('lucky-admin-link');
 	var accessible = state.runtimeReady && state.running && state.configReady;
@@ -567,10 +581,10 @@ function rulesAction(key, save) {
 }
 function ruleEditor(key, title, description) {
  ruleEditors[key] = {token: null, dirty: false};
- return E('section', {'class':'lucky-panel'}, [
-  E('h3', {}, title), E('p', {'class':'lucky-hint'}, description),
-  E('p', {'class':'lucky-hint'}, _('Included in full-directory backups. One entry per line; limit 64 KiB. Load before editing.')),
-  E('div', {'id':'lucky-rules-path-' + key, 'class':'lucky-value'}),
+ return E('section', {'class':'cbi-section lucky-panel lucky-rule-panel', 'aria-label':title}, [
+  E('div', {'class':'lucky-panel-heading'}, [panelTitle(title), E('code', {'class':'lucky-file-name'}, key === 'allowlist' ? 'ip-allowlist.txt' : 'localips')]),
+  E('p', {'class':'lucky-hint'}, description),
+  E('div', {'id':'lucky-rules-path-' + key, 'class':'lucky-value lucky-file-path'}),
   E('label', {'for':'lucky-rules-text-' + key}, _('File contents')),
   E('textarea', {'id':'lucky-rules-text-' + key, 'class':'lucky-rules-text', 'rows':10, 'spellcheck':'false', 'disabled':true,
    'input':function() { ruleEditors[key].dirty = true; }}),
@@ -643,7 +657,7 @@ function copyDiagnostics() {
 }
 
 function diagnosticsPanel() {
-	return E('section', { 'class': 'lucky-panel' }, [
+	return E('section', { 'class': 'cbi-section lucky-panel lucky-diagnostics-panel' }, [
 		E('details', { 'class': 'lucky-diagnostics', 'id': 'lucky-diagnostics', 'toggle': function() {
 			if (this.open && !diagnosticsLoaded) return readDiagnostics();
 		} }, [
@@ -663,37 +677,40 @@ function diagnosticsPanel() {
 function renderDashboard(formNode) {
 	var dashboard = E('div', { 'class': 'lucky-dashboard' }, [
 		// LuCI versions its view scripts, but custom stylesheet URLs need their own revision.
-		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') + '?v=3.0.0-12' }),
-		E('div', { 'class': 'lucky-heading' }, [
-			E('div', {}, [ E('h2', {}, _('Lucky')), E('p', {}, _('Service and admin panel')) ]),
-			E('button', {
-				'class': 'btn cbi-button cbi-button-reload', 'id': 'lucky-refresh', 'type': 'button',
-				'click': function() { return loadState(); }
-			}, _('Refresh'))
-		]),
+		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') + '?v=3.0.0-14' }),
+		E('div', { 'class': 'lucky-toolbar' }, [
 		E('div', {'class':'lucky-tabs','role':'tablist','aria-label':_('Lucky sections')}, tabNames.map(function(key, index) {
 			return E('button', {'type':'button','id':'lucky-tab-' + key,'role':'tab','aria-controls':'lucky-tab-panel-' + key,'aria-selected':index === 0 ? 'true' : 'false','tabindex':index === 0 ? '0' : '-1','click':function() { selectTab(key); },'keydown':function(event) {
 				var next = event.key === 'ArrowRight' ? (index + 1) % 3 : event.key === 'ArrowLeft' ? (index + 2) % 3 : event.key === 'Home' ? 0 : event.key === 'End' ? 2 : -1;
 				if (next >= 0) { event.preventDefault(); selectTab(tabNames[next]); document.getElementById('lucky-tab-' + tabNames[next]).focus(); }
 			}}, [_('Overview'), _('Access rules'), _('Maintenance')][index]);
 		})),
-		E('div', {'id':'lucky-tab-panel-overview','role':'tabpanel','aria-labelledby':'lucky-tab-overview'}, [
-		E('section', { 'class': 'lucky-panel', 'aria-label': _('Service overview') }, [
-			E('h3', {}, _('Service overview')),
+			E('button', {
+				'class': 'btn cbi-button lucky-refresh', 'id': 'lucky-refresh', 'type': 'button',
+				'click': function() { return loadState(); }
+			}, _('Refresh'))
+		]),
+		E('div', {'id':'lucky-tab-panel-overview','class':'lucky-overview-layout','role':'tabpanel','aria-labelledby':'lucky-tab-overview'}, [
+		E('section', { 'class': 'cbi-section lucky-panel lucky-service-panel', 'aria-label': _('Service overview') }, [
+			E('div', { 'class': 'lucky-panel-heading' }, [
+				panelTitle(_('Service overview')),
+				E('div', { 'role': 'status', 'aria-live': 'polite' }, [
+					E('span', { 'class': 'lucky-sr-only' }, _('Running status') + ': '),
+					E('span', { 'id': 'lucky-running', 'class': 'lucky-value' }, _('Collecting data…'))
+				])
+			]),
 			E('div', { 'class': 'lucky-stats', 'role': 'status', 'aria-live': 'polite' }, [
 				textRow(_('Installation status'), 'lucky-install'),
-				textRow(_('Running status'), 'lucky-running'),
-				textRow(_('Package architecture'), 'lucky-arch'),
 				textRow(_('Lucky version'), 'lucky-version'),
-				textRow(_('Build date'), 'lucky-date'),
-				textRow(_('Admin access policy'), 'lucky-internet')
+				textRow(_('Package architecture'), 'lucky-arch'),
+				textRow(_('Build date'), 'lucky-date')
 			]),
 			E('div', { 'class': 'lucky-actions' }, [
 				serviceButton(_('Start'), 'cbi-button-apply', 'start'),
 				serviceButton(_('Restart'), 'cbi-button-reload', 'restart'),
 				serviceButton(_('Stop'), 'cbi-button-reset', 'stop')
 			]),
-			E('div', { 'class': 'lucky-settings' }, [
+			E('div', { 'class': 'lucky-recovery' }, [
 				E('div', { 'class': 'lucky-watchdog-row' }, [
 					E('label', { 'id': 'lucky-watchdog-label', 'for': 'lucky-watchdog-toggle' }, _('Recover after unexpected exit')),
 					E('button', { 'type': 'button', 'id': 'lucky-watchdog-toggle', 'class': 'btn cbi-button', 'role': 'switch', 'aria-checked': 'false', 'aria-busy': 'false', 'aria-labelledby': 'lucky-watchdog-label', 'aria-describedby': 'lucky-watchdog-status', 'disabled': true, 'click': toggleWatchdog }, [
@@ -705,10 +722,11 @@ function renderDashboard(formNode) {
 				E('p', { 'id': 'lucky-watchdog-status', 'class': 'lucky-hint', 'role': 'status', 'aria-live': 'polite' }, _('Collecting data…'))
 			])
 		]),
-		E('section', { 'class': 'lucky-panel', 'aria-label': _('Admin panel') }, [
-			E('h3', {}, _('Admin panel')),
+		E('section', { 'class': 'cbi-section lucky-panel lucky-admin-panel', 'aria-label': _('Admin panel') }, [
+			panelTitle(_('Admin panel')),
+			textRow(_('Admin access policy'), 'lucky-internet'),
 			E('a', {
-				'class': 'lucky-admin-link',
+				'class': 'btn cbi-button cbi-button-action lucky-admin-link',
 				'id': 'lucky-admin-link',
 				'target': '_blank',
 				'rel': 'noopener noreferrer',
@@ -784,13 +802,16 @@ function renderDashboard(formNode) {
 		]),
 		]),
 		E('div', {'id':'lucky-tab-panel-rules','role':'tabpanel','aria-labelledby':'lucky-tab-rules','hidden':true}, [
-			ruleEditor('allowlist', 'ip-allowlist.txt', _('Absolute IP allowlist, ahead of the global blacklist. Single IP addresses only; # starts a comment line. No CIDR, domains or ports. Only direct peers are matched; login and other protections remain active.')),
-			ruleEditor('localips', 'localips', _('Custom LAN IPs and CIDR networks replace built-in networks. Do not add public networks unless intended. Fill defaults to restore the standard LAN ranges.'))
+			E('p', {'class':'lucky-tab-description'}, _('Included in full-directory backups. One entry per line; limit 64 KiB. Load before editing.')),
+			E('div', {'class':'lucky-rules-layout'}, [
+				ruleEditor('allowlist', _('Absolute IP allowlist'), _('Absolute IP allowlist, ahead of the global blacklist. Single IP addresses only; # starts a comment line. No CIDR, domains or ports. Only direct peers are matched; login and other protections remain active.')),
+				ruleEditor('localips', _('LAN networks'), _('Custom LAN IPs and CIDR networks replace built-in networks. Do not add public networks unless intended. Fill defaults to restore the standard LAN ranges.'))
+			])
 		]),
 		E('div', {'id':'lucky-tab-panel-maintenance','role':'tabpanel','aria-labelledby':'lucky-tab-maintenance','hidden':true}, [
-		diagnosticsPanel(),
-		E('section', { 'class': 'lucky-panel', 'aria-label': _('Core maintenance') }, [
-			E('h3', {}, _('Core maintenance')),
+		E('div', { 'class': 'lucky-maintenance-layout' }, [
+		E('section', { 'class': 'cbi-section lucky-panel', 'aria-label': _('Core maintenance') }, [
+			panelTitle(_('Core maintenance')),
 			textRow(_('Core file status'), 'lucky-core-health'),
 			E('p', { 'class': 'lucky-hint' }, _('Repair missing execution permissions, or upload a trusted Lucky Linux tar.gz release to install or replace the core. Configuration is preserved. Archive limit: 64 MiB.')),
 			E('div', { 'class': 'lucky-actions' }, [
@@ -798,21 +819,33 @@ function renderDashboard(formNode) {
 				E('button', { 'type': 'button', 'id': 'lucky-core-upload', 'class': 'btn cbi-button cbi-button-action', 'click': function() { return coreMaintenance(true); } }, _('Upload core'))
 			])
 		]),
-		E('section', { 'class': 'lucky-panel', 'aria-label': _('Configuration backup and restore') }, [
-			E('h3', {}, _('Configuration backup and restore')),
+		E('section', { 'class': 'cbi-section lucky-panel', 'aria-label': _('Configuration backup and restore') }, [
+			panelTitle(_('Configuration backup and restore')),
 			E('p', { 'class': 'lucky-hint' }, _('Back up every file in the saved configuration directory. Restore replaces the entire directory. Lucky is stopped during the operation and restarted only if it was running.')),
+			E('details', { 'class': 'lucky-format-help' }, [
+			E('summary', {}, _('Backup format and restore requirements')),
 			E('p', { 'class': 'lucky-hint' }, _('Only LuCI full-directory ZIP backups are supported here, not backups exported by the Lucky admin panel. ZIP limit: 64 MiB; up to 10000 entries.')),
 			E('p', { 'class': 'lucky-hint' }, _('Restore is allowed only into an empty directory or one containing a regular .lkcf file at its root. You will review the file changes before confirming.')),
+			]),
 			E('div', { 'class': 'lucky-actions' }, [
 				E('button', { 'type': 'button', 'id': 'lucky-backup', 'class': 'btn cbi-button cbi-button-action',
 					'click': function() { return configurationArchive(false); } }, _('Download backup')),
-				E('button', { 'type': 'button', 'id': 'lucky-restore', 'class': 'btn cbi-button cbi-button-negative',
+				E('button', { 'type': 'button', 'id': 'lucky-restore', 'class': 'btn cbi-button',
 					'click': function() { return configurationArchive(true); } }, _('Restore backup')),
+			]),
+			E('div', { 'class': 'lucky-danger-row' }, [
+				E('p', { 'class': 'lucky-hint' }, _('Clearing removes every configuration file and leaves Lucky stopped.')),
 				E('button', { 'type': 'button', 'id': 'lucky-clear', 'class': 'btn cbi-button cbi-button-negative',
 					'click': function() { return configurationArchive('clear'); } }, _('Clear configuration'))
 			]),
 			E('p', { 'id': 'lucky-backup-status', 'class': 'lucky-hint', 'role': 'status', 'aria-live': 'polite' })
-		]), E('div', { 'class': 'lucky-panel lucky-config' }, [ formNode ])
+		])
+		]),
+		E('div', { 'class': 'cbi-section lucky-panel lucky-config' }, [
+			panelTitle(_('Persistent configuration')), formNode,
+			E('div', { 'id': 'lucky-config-actions' })
+		]),
+		diagnosticsPanel()
 		])
 	]);
 
@@ -825,9 +858,17 @@ function renderDashboard(formNode) {
 }
 
 return view.extend({
+	addFooter: function() {
+		// Keep LuCI's native save/apply handlers, beside the only UCI form.
+		var footer = this.super('addFooter', arguments);
+		var actions = document.getElementById('lucky-config-actions');
+		if (!actions) return footer;
+		actions.appendChild(footer);
+		return E([]);
+	},
 	render: function() {
 		var map = new form.Map('lucky');
-		var section = map.section(form.TypedSection, 'lucky', _('Persistent configuration'));
+		var section = map.section(form.TypedSection, 'lucky');
 		section.anonymous = true;
 		section.addremove = false;
 
@@ -843,7 +884,11 @@ return view.extend({
 		};
 
 		return map.render().then(function(formNode) {
-			return E('div', { 'class': 'lucky-page' }, [ renderDashboard(formNode) ]);
+			return E('div', { 'class': 'cbi-map lucky-page' }, [
+				E('h2', {}, _('Lucky')),
+				E('div', { 'class': 'cbi-map-descr' }, _('Service and admin panel')),
+				renderDashboard(formNode)
+			]);
 		});
 	}
 });

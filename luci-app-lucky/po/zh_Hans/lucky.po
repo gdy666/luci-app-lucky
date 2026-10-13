@@ -436,6 +436,12 @@ msgstr "可用内存不足，已跳过核心信息查询。可停止 Lucky 后�
 msgid "Unable to read recovery settings. Install the matching updated Lucky core package."
 msgstr "无法读取自动恢复设置，请安装配套更新的 Lucky 核心软件包。"
 
+msgid "Unable to read service status."
+msgstr "无法读取运行状态。"
+
+msgid "Command failed (exit code %s)."
+msgstr "命令执行失败（退出码 %s）。"
+
 msgid "Recovery enabled"
 msgstr "已开启"
 
@@ -462,3 +468,15 @@ msgstr "意外退出自动恢复"
 
 msgid "Adds a fallback to system supervision. Manual stop and maintenance pause recovery. Uninstalling the Lucky core package removes its scheduled task."
 msgstr "作为系统进程守护的额外保障。主动停止或维护期间暂停恢复；卸载 Lucky 核心软件包时会清理它创建的计划任务。"
+
+msgid "Absolute IP allowlist"
+msgstr "绝对 IP 白名单"
+
+msgid "LAN networks"
+msgstr "局域网网段"
+
+msgid "Backup format and restore requirements"
+msgstr "备份格式与还原要求"
+
+msgid "Clearing removes every configuration file and leaves Lucky stopped."
+msgstr "清空会删除所有配置文件，并保持 Lucky 停止。"

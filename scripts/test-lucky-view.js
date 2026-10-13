@@ -44,7 +44,10 @@ function fixture() {
 						} else watchdogCalls.push({ operation:args[0], resolve, reject });
 						return;
 					}
-					if (args[0] === 'core-status') { resolve({ code: 0, stdout: JSON.stringify({ ok: true, status: context.coreStatus || 'ready', available_memory_kib: context.availableMemory === undefined ? 512 * 1024 : context.availableMemory }) }); return; }
+					if (args[0] === 'core-status') {
+						if (context.coreReply !== undefined) { resolve(context.coreReply); return; }
+						resolve({ code: 0, stdout: JSON.stringify({ ok: true, status: context.coreStatus || 'ready', available_memory_kib: context.availableMemory === undefined ? 512 * 1024 : context.availableMemory }) }); return;
+					}
 					calls[args[0]] = { resolve, reject };
 				});
 			},
@@ -65,6 +68,15 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 (async () => {
 	const f = fixture();
 	await f.view.render();
+	const nativeFooter = {};
+	f.view.super = method => {
+		assert.equal(method, 'addFooter', 'keep native LuCI save/apply handlers');
+		return nativeFooter;
+	};
+	let mountedFooter;
+	f.nodes['lucky-config-actions'].appendChild = node => { mountedFooter = node; };
+	f.view.addFooter();
+	assert.equal(mountedFooter, nativeFooter, 'UCI actions belong to the configuration form in Maintenance');
 	assert.deepEqual(Object.keys(f.calls), [], 'render must finish before launching slow queries');
 	assert.equal(f.nodes['lucky-port'].disabled, true);
 	const loading = f.timers[0]();
@@ -127,6 +139,35 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	assert.equal(failed.nodes['lucky-admin-link'].href, undefined);
 	assert.match(failed.nodes['lucky-install'].textContent, /Permission denied/);
 	assert.equal(failed.nodes['lucky-refresh'].disabled, false, 'allow retry after failure');
+
+	for (const [response, message] of [
+		[6, 'Permission denied'],
+		[{ code: 127 }, 'Command failed (exit code 127).'],
+		[{ code: 1, stderr: "module 'luci.jsonc' not found" }, "module 'luci.jsonc' not found"],
+		[{ code: 0, stdout: '{"ok":false,"error":"Cannot open backup lock"}' }, 'Cannot open backup lock'],
+		[{ code: 0, stdout: 'invalid json' }, 'Invalid response from Core status.']
+	]) {
+		const broken = fixture(); broken.context.coreReply = response;
+		await broken.view.render(); const loading = broken.timers[0]();
+		reply(broken, 'status', 'true'); reply(broken, 'arch', 'arm64'); await loading;
+		assert.ok(broken.nodes['lucky-install'].textContent.includes(message), 'keep the original inspection failure');
+		assert.equal(broken.calls.base, undefined, 'failed inspection must not launch core queries');
+		assert.equal(broken.calls.info, undefined);
+		assert.equal(broken.nodes['lucky-running'].textContent, 'Running');
+		assert.equal(broken.nodes['lucky-service-stop'].disabled, false);
+		assert.equal(broken.nodes['lucky-refresh'].disabled, false);
+		broken.context.coreReply = undefined;
+		const retry = broken.nodes['lucky-refresh'].click();
+		reply(broken, 'status', 'true'); reply(broken, 'arch', 'arm64'); await flush();
+		reply(broken, 'base', {BaseConfigure:{}}); await flush(); reply(broken, 'info', {Version:'3.2.3'}); await retry;
+		assert.equal(broken.nodes['lucky-install'].textContent, 'Installed', 'successful retry clears the old error');
+		const stale = broken.nodes['lucky-refresh'].click();
+		broken.calls.status.reject(new Error('Service RPC unavailable')); reply(broken, 'arch', 'arm64'); await flush();
+		reply(broken, 'base', {BaseConfigure:{}}); await flush(); reply(broken, 'info', {Version:'3.2.3'}); await stale;
+		assert.equal(broken.nodes['lucky-running'].textContent, 'Unable to read service status.');
+		assert.equal(broken.nodes['lucky-service-stop'].disabled, true, 'failed refresh must not retain a stale running state');
+	}
+	console.log('PASS: inspection failures retain their cause, skip dependent queries and allow retry; failed status reads clear stale state');
 
 	const restore = f.nodes['lucky-restore'].click();
 	assert.equal(f.nodes['lucky-refresh'].disabled, true);

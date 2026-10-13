@@ -89,6 +89,9 @@ OPENWRT_FORCE=1 bash /home/user/src/luci-app-lucky/scripts/build-sdk.sh "$PWD" \
 
 `OPENWRT_FORCE=1` 只对 19.07 SDK 生效，会创建旧构建系统的宿主检查 stamp，向 `make` 显式传入 `FORCE=1`，并将旧 LuCI 中写死的 `contrib/lemon` 宿主编译规则精确调整为 `cc -std=gnu89`，以兼容当前 GCC 的默认 C 语言标准。这会跳过整个旧 SDK 宿主检查，因此除已淘汰的 Python 2 外，上述编译依赖仍必须完整安装；脚本会拒绝在新版 SDK 中使用此选项，也会在旧 LuCI 规则不匹配时停止。
 
+19.07 SDK 的安装、卸载包装脚本还会将 `/lib/functions.sh` 的检查从可执行改为可读，保留默认生命周期处理，兼容较新固件中该文件为 `0644` 的情况。否则跨版本安装虽可能返回成功，实际会跳过服务启停和 LuCI 权限、缓存更新。
+脚本同时修正旧 SDK 的 `.provides` 打包入口，确保依赖包也能取得包元数据及宿主工具路径，避免增量构建生成空包名或找不到 `po2lmo`。
+
 输出位于 `bin/packages/<架构>/lucky/` 附近：
 
 - OpenWrt 25.12/Snapshot：`.apk`
