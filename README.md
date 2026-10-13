@@ -46,13 +46,20 @@ LuCI 支持整目录 ZIP 备份与完整替换还原（含隐藏文件和子目�
 
 ## 界面预览
 
-新版界面预览，访问规则中的地址仅为示例。界面随 LuCI 主题自适应。
+以下为新版界面在 iStoreOS（Argon 主题）中的实机截图，支持桌面与手机布局，样式随 LuCI 主题自适应。
 
 ![概览：服务状态与自动恢复开关](./previews/overview.jpg)
 
 ![访问规则：绝对白名单与局域网网段编辑](./previews/access-rules.jpg)
 
-![维护：异常日志、核心维护与配置备份还原](./previews/maintenance.jpg)
+![维护：核心维护、配置备份还原与异常日志](./previews/maintenance.jpg)
+
+<details>
+<summary>手机布局预览</summary>
+
+<img src="./previews/mobile.jpg" alt="手机布局：服务状态、自动恢复开关与管理后台" width="390">
+
+</details>
 
 ## License
 
