@@ -21,6 +21,12 @@
         "/usr/libexec/lucky-backup core-status": [
           "exec"
         ],
+        "/usr/libexec/lucky-backup core-info": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-backup core-base": [
+          "exec"
+        ],
         "/usr/libexec/lucky-diagnostics read": [
           "exec"
         ]
@@ -31,6 +37,24 @@
     },
     "write": {
       "file": {
+        "/usr/libexec/lucky-backup base-invalidate": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-backup set-port *": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-backup set-safe-url *": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-backup set-internet true": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-backup set-internet false": [
+          "exec"
+        ],
+        "/usr/libexec/lucky-backup reset-auth": [
+          "exec"
+        ],
         "/usr/libexec/lucky-watchdog enable": [
           "exec"
         ],

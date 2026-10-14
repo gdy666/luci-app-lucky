@@ -7,6 +7,8 @@ local archive = require "luci.lucky_archive"
 local ROOT = "/tmp/lucky-luci-backup"
 local LOCK = ROOT .. "/lock"
 local INIT = "/etc/init.d/lucky"
+local CONFIG_HELPER = "/usr/libexec/lucky-call"
+local config_operations = { ["set-port"] = 2, ["set-safe-url"] = 2, ["set-internet"] = 2, ["reset-auth"] = 1 }
 local locked, resume, stage, previous, target
 
 local function must(value, message)
@@ -50,9 +52,15 @@ local function workspace(token)
 	must(st and st.type == "dir" and st.uid == 0, "Backup workspace has expired")
 	return path
 end
-local function lock()
+local function lock(wait)
 	locked = must(nixio.open(LOCK, "w", "600"), "Cannot open backup lock")
-	must(locked:lock("tlock"), "Another backup or restore is in progress")
+	-- Concurrent page opens share the first successful core query. Bound the
+	-- wait and keep status reads independent of this potentially slow operation.
+	for attempt = 1, wait and 51 or 1 do
+		if locked:lock("tlock") then return end
+		if wait and attempt < 51 then nixio.nanosleep(0, 100000000) end
+	end
+	error("Another backup or restore is in progress", 0)
 end
 local function running() return run({ "/bin/pidof", "lucky" }) end
 local function stop()
@@ -158,13 +166,42 @@ local function validate(path)
 	archive.extract(path, info)
 	return info
 end
+local function update_config()
+	local core = require "luci.lucky_core"
+	core.invalidate_base()
+	local output = ROOT .. "/config-output"
+	local errors = ROOT .. "/config-error"
+	local words = { quote(CONFIG_HELPER) }
+	for _, value in ipairs(arg) do
+		must(type(value) == "string" and #value <= 512 and not value:find("[%z\1-\31\127]"), "Invalid configuration argument")
+		words[#words + 1] = quote(value)
+	end
+	-- Keep old core packages working: their setter remains authoritative. Run
+	-- it under the same lock as cached reads, and invalidate even on partial failure.
+	local code = os.execute(table.concat(words, " ") .. " >" .. quote(output) .. " 2>" .. quote(errors))
+	local file = io.open(output, "rb")
+	local text = file and file:read(16384) or ""
+	if file then file:close() end
+	file = io.open(errors, "rb")
+	local detail = file and file:read(16384) or ""
+	if file then file:close() end
+	fs.unlink(output); fs.unlink(errors)
+	core.invalidate_base()
+	must(code == 0, detail ~= "" and detail or (text ~= "" and text or "Unable to update Lucky configuration"))
+	return { stdout = text }
+end
 local function main()
 	ensure_root()
 	local operation, token = arg[1], arg[2]
 	local rules_open = operation == "rules-localips" or operation == "rules-allowlist"
-	must(operation and #arg == ((rules_open or operation == "prepare" or operation == "core-prepare" or operation == "core-status" or operation == "core-fix") and 1 or 2), "Invalid backup arguments")
-	lock()
+	local config_update = config_operations[operation]
+	must(operation and #arg == (config_update or ((rules_open or operation == "prepare" or operation == "core-prepare" or operation == "core-status" or operation == "core-info" or operation == "core-base" or operation == "base-invalidate" or operation == "core-fix") and 1 or 2)), "Invalid backup arguments")
 	if operation == "core-status" then return require("luci.lucky_core").status() end
+	lock(config_update or operation == "core-info" or operation == "core-base" or operation == "base-invalidate")
+	if config_update then return update_config() end
+	if operation == "base-invalidate" then return require("luci.lucky_core").invalidate_base() end
+	if operation == "core-info" then return require("luci.lucky_core").info(ROOT) end
+	if operation == "core-base" then return require("luci.lucky_core").base(ROOT, remove) end
 	if operation == "core-fix" then return require("luci.lucky_core").fix() end
 	if rules_open or operation == "prepare" or operation == "core-prepare" then
 		local directory = (rules_open or operation == "prepare") and config_dir() or "core"
@@ -278,6 +315,7 @@ local function main()
 		must(st and st.type == (entry.directory and "dir" or "reg") and (entry.directory or st.size == entry.size), "Extracted files do not match the backup")
 	end
 	must(not running(), "Lucky was started by another operation; restore cancelled")
+	require("luci.lucky_core").invalidate_base()
 	must(fs.rename(target, previous), "Cannot move original configuration; original files are unchanged")
 	if not fs.rename(stage, target) then
 		must(fs.rename(previous, target), "Restore rollback failed; original files are at " .. previous)

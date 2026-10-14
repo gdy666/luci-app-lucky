@@ -1,6 +1,15 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "Layout"
+msgstr "布局"
+
+msgid "Side by side"
+msgstr "并排"
+
+msgid "Vertical"
+msgstr "垂直"
+
 msgid "Session expired. Reload this page and sign in again."
 msgstr "登录已过期，请刷新页面并重新登录。"
 
@@ -135,9 +144,6 @@ msgstr "未安装"
 
 msgid "Package architecture"
 msgstr "软件包架构"
-
-msgid "Persistent configuration"
-msgstr "持久化配置"
 
 msgid "Reset admin credentials"
 msgstr "重置管理账号密码"
@@ -516,3 +522,24 @@ msgstr "备份格式与还原要求"
 
 msgid "Clearing removes every configuration file and leaves Lucky stopped."
 msgstr "清空会删除所有配置文件，并保持 Lucky 停止。"
+
+msgid "Format and behavior"
+msgstr "格式与生效说明"
+
+msgid "Recovery behavior"
+msgstr "自动恢复说明"
+
+msgid "Open Lucky to manage its services and rules."
+msgstr "进入 Lucky 后台，管理服务与规则。"
+
+msgid "Allow individual IPs before the global blacklist. Requires Lucky 3.1.0 or later."
+msgstr "优先于全局黑名单的独立 IP 白名单，需要 Lucky 3.1.0 及以上版本。"
+
+msgid "Define local IPs and networks. A non-empty file replaces the built-in networks."
+msgstr "自定义局域网 IP 和网段；文件非空时，替换默认内置网段。"
+
+msgid "Configuration and backups"
+msgstr "配置与备份"
+
+msgid "Backups and rule files use the saved directory. Save and apply directory changes separately."
+msgstr "备份和规则文件使用已保存的配置目录。修改目录后，请单独保存并应用。"

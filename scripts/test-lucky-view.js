@@ -7,7 +7,7 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname,
 	'../luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js'), 'utf8');
 
-function fixture() {
+function fixture(storage) {
 	const nodes = {}, calls = {}, timers = [], archiveCalls = [], notices = [], watchdogCalls = [];
 	function E(tag, attrs, children) {
 		const node = Object.assign({ tag, textContent: children, disabled: false,
@@ -22,7 +22,7 @@ function fixture() {
 		fs: { write: (path, value) => { context.lastWrite = {path, value}; return Promise.resolve(); } },
 		E, L: { resource: value => '/luci-static/resources/' + value, env: { cgi_base: '/cgi-bin' } }, _: value => value,
 		document: { getElementById: id => nodes[id], querySelectorAll: () => Object.values(nodes).filter(n => /^(button|input)$/.test(n.tag)) },
-		window: { location: { hostname: 'localhost' }, setTimeout: fn => timers.push(fn), confirm: () => true },
+		window: { localStorage: storage, location: { hostname: 'localhost' }, setTimeout: fn => timers.push(fn), confirm: () => true },
 		view: { extend: value => value }, ui: { addNotification: (title, body) => notices.push(body), uploadFile: () => Promise.resolve(), showModal: () => {}, hideModal: () => {} },
 		request: { post: (url, body, options) => new Promise(resolve => {
 			assert.equal(options.timeout, 0, 'maintenance must not time out while Lucky is stopped');
@@ -30,6 +30,8 @@ function fixture() {
 			archiveCalls.push({ operation: command[1], token: command[2], reply: result => resolve({ status: 200, json: () => result }) });
 		}) },
 		form: { Map: function() {
+			context.configMap = this;
+			this.save = () => context.saveFailure ? Promise.reject(new Error('UCI save failed')) : Promise.resolve('saved');
 			this.section = () => ({ option: () => ({}) });
 			this.render = () => Promise.resolve({});
 		} },
@@ -46,8 +48,10 @@ function fixture() {
 					}
 					if (args[0] === 'core-status') {
 						if (context.coreReply !== undefined) { resolve(context.coreReply); return; }
-						resolve({ code: 0, stdout: JSON.stringify({ ok: true, status: context.coreStatus || 'ready', available_memory_kib: context.availableMemory === undefined ? 512 * 1024 : context.availableMemory }) }); return;
+						resolve({ code: 0, stdout: JSON.stringify({ ok: true, status: context.coreStatus || 'ready', info: context.cachedInfo, base: context.cachedBase, available_memory_kib: context.availableMemory === undefined ? 512 * 1024 : context.availableMemory }) }); return;
 					}
+					if (/^(core-(info|base)|base-invalidate|set-port|set-safe-url|set-internet|reset-auth)$/.test(args[0]))
+						assert.equal(command, '/usr/libexec/lucky-backup', 'cache-sensitive operations must use the locked backend helper');
 					calls[args[0]] = { resolve, reject };
 				});
 			},
@@ -62,10 +66,42 @@ function fixture() {
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const reply = (f, name, value) => f.calls[name].resolve({ code: 0,
-	stdout: typeof value === 'string' ? value : JSON.stringify(value) });
+	stdout: typeof value === 'string' ? value : JSON.stringify(/^core-(info|base)$/.test(name) ? {ok: true, ...value} : value) });
 const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in frontend test'); process.exit(1); }, 10000);
 
 (async () => {
+	const preferences = new Map();
+	const storage = { getItem: key => preferences.get(key), setItem: (key, value) => preferences.set(key, value) };
+	const layout = fixture(storage);
+	await layout.view.render();
+	assert.equal(layout.nodes['lucky-page']['data-layout'], 'columns');
+	assert.equal(layout.nodes['lucky-layout'].disabled, false, 'layout must be usable before service queries finish');
+	layout.nodes['lucky-port'].value = '16688';
+	layout.nodes['lucky-rules-text-localips'].value = '192.168.1.0/24\n';
+	layout.nodes['lucky-tab-rules'].click();
+	layout.nodes['lucky-layout'].change({target:{value:'stacked'}});
+	assert.equal(layout.nodes['lucky-page']['data-layout'], 'stacked');
+	assert.equal(layout.nodes['lucky-tab-panel-rules'].hidden, false, 'layout switching preserves the active tab');
+	assert.equal(layout.nodes['lucky-port'].value, '16688');
+	assert.equal(layout.nodes['lucky-rules-text-localips'].value, '192.168.1.0/24\n', 'layout switching must preserve unsaved edits');
+	assert.deepEqual(Object.keys(layout.calls), [], 'layout preference must not query or write the router');
+	assert.equal(layout.timers.length, 1, 'layout switching must not reload the dashboard');
+	const reopened = fixture(storage); await reopened.view.render();
+	assert.equal(reopened.nodes['lucky-page']['data-layout'], 'stacked', 'remember the choice across page visits');
+	reopened.nodes['lucky-layout'].change({target:{value:'columns'}});
+	const columns = fixture(storage); await columns.view.render();
+	assert.equal(columns.nodes['lucky-page']['data-layout'], 'columns', 'switching back must also persist');
+	for (const unavailable of [undefined, {getItem: () => 'invalid'}, {
+		getItem: () => { throw new Error('Storage denied'); },
+		setItem: () => { throw new Error('Storage full'); }
+	}]) {
+		const fallback = fixture(unavailable); await fallback.view.render();
+		assert.equal(fallback.nodes['lucky-page']['data-layout'], 'columns');
+		fallback.nodes['lucky-layout'].change({target:{value:'stacked'}});
+		assert.equal(fallback.nodes['lucky-page']['data-layout'], 'stacked', 'blocked storage must not prevent switching');
+	}
+	console.log('PASS: layout preference persists, preserves tabs and edits, and works without browser storage or RPC');
+
 	const f = fixture();
 	await f.view.render();
 	const nativeFooter = {};
@@ -80,21 +116,21 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	assert.deepEqual(Object.keys(f.calls), [], 'render must finish before launching slow queries');
 	assert.equal(f.nodes['lucky-port'].disabled, true);
 	const loading = f.timers[0]();
-	assert.equal(f.calls.info, undefined, 'packed-core queries must not run concurrently');
+	assert.equal(f.calls['core-info'], undefined, 'packed-core queries must not run concurrently');
 	reply(f, 'status', 'true');
 	reply(f, 'arch', 'x86_64');
 	await flush();
 	assert.equal(f.nodes['lucky-running'].textContent, 'Running');
 	assert.equal(f.nodes['lucky-port'].disabled, true);
 	assert.equal(f.nodes['lucky-admin-link'].href, undefined);
-	reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16601, SafeURL: '/preview' } });
+	reply(f, 'core-base', { BaseConfigure: { AdminWebListenPort: 16601, SafeURL: '/preview' } });
 	await flush();
 	assert.equal(f.nodes['lucky-port'].disabled, false);
 	assert.equal(f.nodes['lucky-admin-link'].href, 'http://localhost:16601/preview');
 	assert.equal(f.nodes['lucky-admin-link'].textContent, 'Open admin panel');
 	assert.equal(f.nodes['lucky-admin-address'].textContent, 'http://localhost:16601/preview');
 	f.nodes['lucky-port'].value = '16688';
-	reply(f, 'info', { Version: '2.27.2', Date: 'test' });
+	reply(f, 'core-info', { Version: '2.27.2', Date: 'test' });
 	await loading;
 	assert.equal(f.nodes['lucky-port'].value, '16688', 'late metadata must not overwrite edits');
 	assert.equal(f.nodes['lucky-save-port'].disabled, false);
@@ -110,9 +146,9 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	reply(f, 'status', 'false');
 	reply(f, 'arch', 'x86_64');
 	await flush();
-	reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } });
+	reply(f, 'core-base', { BaseConfigure: { AdminWebListenPort: 16602 } });
 	await flush();
-	reply(f, 'info', { Version: '2.27.3' });
+	reply(f, 'core-info', { Version: '2.27.3' });
 	await refreshed;
 	assert.equal(f.nodes['lucky-refresh'].textContent, 'Refresh');
 	assert.equal(f.nodes['lucky-refresh'].disabled, false);
@@ -129,9 +165,9 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	await flush();
 	reply(failed, 'status', 'true');
 	reply(failed, 'arch', 'x86_64');
-	failed.calls.base.resolve(6);
+	failed.calls['core-base'].resolve(6);
 	await flush();
-	reply(failed, 'info', { Version: '2.27.2' });
+	reply(failed, 'core-info', { Version: '2.27.2' });
 	await failure;
 	assert.equal(failed.nodes['lucky-running'].textContent, 'Running');
 	assert.equal(failed.nodes['lucky-port'].disabled, true);
@@ -151,19 +187,19 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 		await broken.view.render(); const loading = broken.timers[0]();
 		reply(broken, 'status', 'true'); reply(broken, 'arch', 'arm64'); await loading;
 		assert.ok(broken.nodes['lucky-install'].textContent.includes(message), 'keep the original inspection failure');
-		assert.equal(broken.calls.base, undefined, 'failed inspection must not launch core queries');
-		assert.equal(broken.calls.info, undefined);
+		assert.equal(broken.calls['core-base'], undefined, 'failed inspection must not launch core queries');
+		assert.equal(broken.calls['core-info'], undefined);
 		assert.equal(broken.nodes['lucky-running'].textContent, 'Running');
 		assert.equal(broken.nodes['lucky-service-stop'].disabled, false);
 		assert.equal(broken.nodes['lucky-refresh'].disabled, false);
 		broken.context.coreReply = undefined;
 		const retry = broken.nodes['lucky-refresh'].click();
 		reply(broken, 'status', 'true'); reply(broken, 'arch', 'arm64'); await flush();
-		reply(broken, 'base', {BaseConfigure:{}}); await flush(); reply(broken, 'info', {Version:'3.2.3'}); await retry;
+		reply(broken, 'core-base', {BaseConfigure:{}}); await flush(); reply(broken, 'core-info', {Version:'3.2.3'}); await retry;
 		assert.equal(broken.nodes['lucky-install'].textContent, 'Installed', 'successful retry clears the old error');
 		const stale = broken.nodes['lucky-refresh'].click();
 		broken.calls.status.reject(new Error('Service RPC unavailable')); reply(broken, 'arch', 'arm64'); await flush();
-		reply(broken, 'base', {BaseConfigure:{}}); await flush(); reply(broken, 'info', {Version:'3.2.3'}); await stale;
+		reply(broken, 'core-base', {BaseConfigure:{}}); await flush(); reply(broken, 'core-info', {Version:'3.2.3'}); await stale;
 		assert.equal(broken.nodes['lucky-running'].textContent, 'Unable to read service status.');
 		assert.equal(broken.nodes['lucky-service-stop'].disabled, true, 'failed refresh must not retain a stale running state');
 	}
@@ -183,7 +219,7 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	f.archiveCalls[2].reply({ ok: true });
 	await flush();
 	reply(f, 'status', 'false'); reply(f, 'arch', 'x86_64');
-	reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } }); await flush(); reply(f, 'info', { Version: '2.27.3' });
+	reply(f, 'core-base', { BaseConfigure: { AdminWebListenPort: 16602 } }); await flush(); reply(f, 'core-info', { Version: '2.27.3' });
 	await restore;
 	assert.equal(f.nodes['lucky-restore'].disabled, false);
 	assert.equal(f.nodes['lucky-service-start'].disabled, false);
@@ -214,7 +250,7 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 		f.archiveCalls[i].reply({ ok: true });
 		await flush();
 		reply(f, 'status', 'false'); reply(f, 'arch', 'x86_64');
-		reply(f, 'base', { BaseConfigure: { AdminWebListenPort: 16602 } }); await flush(); reply(f, 'info', { Version: '2.27.3' });
+		reply(f, 'core-base', { BaseConfigure: { AdminWebListenPort: 16602 } }); await flush(); reply(f, 'core-info', { Version: '2.27.3' });
 		await clearing;
 		assert.equal(f.nodes['lucky-clear'].disabled, false);
 	}
@@ -223,9 +259,9 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	await missing.view.render();
 	const missingLoad = missing.timers[0]();
 	await flush();
-	missing.calls.base.resolve({ code: 127, stderr: 'Lucky is not installed' });
+	missing.calls['core-base'].resolve({ code: 127, stderr: 'Lucky is not installed' });
 	await flush();
-	missing.calls.info.resolve({ code: 127, stderr: 'Lucky is not installed' });
+	missing.calls['core-info'].resolve({ code: 127, stderr: 'Lucky is not installed' });
 	reply(missing, 'status', 'false'); reply(missing, 'arch', 'x86_64'); await missingLoad;
 	assert.equal(missing.nodes['lucky-core-upload'].disabled, false, 'missing core must not block upload');
 	assert.equal(missing.nodes['lucky-core-fix'].disabled, true);
@@ -238,7 +274,7 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	missing.archiveCalls[j++].reply({ ok: false, error: 'Wrong architecture' }); await flush();
 	assert.equal(missing.archiveCalls[j].operation, 'cleanup');
 	missing.archiveCalls[j].reply({ ok: true }); await flush();
-	missing.calls.base.resolve({ code: 127 }); await flush(); missing.calls.info.resolve({ code: 127 });
+	missing.calls['core-base'].resolve({ code: 127 }); await flush(); missing.calls['core-info'].resolve({ code: 127 });
 	reply(missing, 'status', 'false'); reply(missing, 'arch', 'x86_64'); await uploadCore;
 	assert.equal(missing.archiveCalls.some(c => c.operation === 'core-install'), false);
 	console.log('PASS: missing core allows upload; invalid core never reaches replacement');
@@ -246,7 +282,7 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 		let modal;
 		f.context.ui.showModal = (title, children) => { modal = { title, children }; };
 		let i = f.archiveCalls.length;
-		const previousInfo = f.calls.info, previousBase = f.calls.base;
+		const previousInfo = f.calls['core-info'], previousBase = f.calls['core-base'];
 		const upgrade = f.nodes['lucky-core-upload'].click();
 		f.archiveCalls[i++].reply({ ok: true, token }); await flush();
 		assert.equal(f.archiveCalls[i].operation, 'core-check');
@@ -264,10 +300,105 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 		f.archiveCalls[i].reply({ ok: true }); await flush();
 		reply(f, 'status', 'false'); reply(f, 'arch', 'x86_64');
 		await upgrade;
-		assert.equal(f.calls.info, previousInfo, 'must not spawn metadata query alongside restarted service');
-		assert.equal(f.calls.base, previousBase, 'must not spawn configuration query alongside restarted service');
+		assert.equal(f.calls['core-info'], previousInfo, 'must not spawn metadata query alongside restarted service');
+		assert.equal(f.calls['core-base'], previousBase, 'must not spawn configuration query alongside restarted service');
+		if (confirm) {
+			assert.equal(f.nodes['lucky-version'].textContent, '3.2.1', 'keep metadata validated during installation');
+			assert.equal(f.nodes['lucky-install'].textContent, 'Installed');
+			assert.equal(f.nodes['lucky-service-start'].disabled, false);
+		}
 	}
 	console.log('PASS: static preview requires explicit stop confirmation; cancel only cleans up; success shows actual state');
+	for (const repaired of [false, true]) {
+		const repair = fixture(); repair.context.coreStatus = 'permissions'; repair.context.availableMemory = 0;
+		await repair.view.render(); const initial = repair.timers[0]();
+		reply(repair, 'status', 'false'); reply(repair, 'arch', 'arm64'); await initial;
+		assert.equal(repair.nodes['lucky-core-fix'].disabled, false);
+		const task = repair.nodes['lucky-core-fix'].click(); await flush();
+		assert.equal(repair.archiveCalls[0].operation, 'core-fix');
+		repair.context.coreStatus = repaired ? 'ready' : 'permissions';
+		repair.archiveCalls[0].reply(repaired ? {ok:true,status:'ready'} : {ok:false,error:'Read-only filesystem'});
+		await flush(); reply(repair, 'status', 'false'); await task;
+		assert.equal(repair.nodes['lucky-install'].textContent, repaired ? 'Installed' : 'Execution permission missing');
+		assert.equal(repair.nodes['lucky-core-health'].textContent, repaired ? 'Executable' : 'Execution permission missing');
+		assert.equal(repair.nodes['lucky-service-start'].disabled, !repaired, 'successful repair must enable starting the core');
+		assert.equal(repair.nodes['lucky-core-fix'].disabled, repaired);
+		assert.equal(repair.nodes['lucky-version'].textContent, '-', 'repair does not fabricate core metadata');
+		assert.equal(repair.nodes['lucky-admin-link'].href, undefined);
+		assert.equal(repair.calls['core-info'], undefined);
+		assert.equal(repair.calls['core-base'], undefined);
+		if (!repaired) assert.match(repair.notices[0].textContent, /Read-only filesystem/);
+	}
+	for (const ending of ['missing', 'permissions', 'unsafe', 'core-failed', 'status-failed', 'config-cleared', 'core-changed']) {
+		const changed = fixture();
+		changed.context.cachedInfo = {Version:'3.2.3',Date:'cached-build'};
+		changed.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16601,SafeURL:'/old'}};
+		await changed.view.render(); const initial = changed.timers[0]();
+		reply(changed, 'status', 'true'); reply(changed, 'arch', 'arm64'); await initial;
+		assert.equal(changed.nodes['lucky-admin-link'].href, 'http://localhost:16601/old');
+		changed.context.ui.uploadFile = () => Promise.reject(new Error('Upload cancelled'));
+		const task = changed.nodes['lucky-core-upload'].click();
+		changed.archiveCalls[0].reply({ok:true,token}); await flush();
+		assert.equal(changed.archiveCalls[1].operation, 'cleanup');
+		if (ending === 'core-failed') changed.context.coreReply = 6;
+		else if (ending === 'config-cleared') changed.context.cachedBase = undefined;
+		else if (ending === 'core-changed') {
+			changed.context.cachedBase = undefined; changed.context.cachedInfo = undefined;
+		}
+		else if (ending !== 'status-failed') changed.context.coreStatus = ending;
+		changed.archiveCalls[1].reply({ok:true}); await flush();
+		assert.equal(changed.nodes['lucky-admin-link'].href, undefined, 'do not retain a stale entry while the fast check is pending');
+		assert.equal(changed.nodes['lucky-refresh'].disabled, true, 'wait for both fast checks even when one fails');
+		if (ending === 'status-failed') changed.calls.status.reject(new Error('Service RPC unavailable'));
+		else reply(changed, 'status', 'true');
+		await task;
+		assert.equal(changed.nodes['lucky-admin-link'].href, undefined, 'failed/missing core checks must not leave an active old entry');
+		assert.equal(changed.nodes['lucky-service-start'].disabled, true);
+		assert.equal(changed.nodes['lucky-service-restart'].disabled, !['config-cleared', 'core-changed'].includes(ending));
+		assert.equal(changed.nodes['lucky-service-stop'].disabled, ending === 'status-failed', 'a known running process can still be stopped');
+		assert.equal(changed.nodes['lucky-port'].disabled, ending !== 'status-failed');
+		assert.equal(changed.nodes['lucky-version'].textContent, ['status-failed', 'config-cleared'].includes(ending) ? '3.2.3' : '-');
+		assert.equal(changed.nodes['lucky-date'].textContent, ['status-failed', 'config-cleared'].includes(ending) ? 'cached-build' : '-');
+		if (ending !== 'status-failed') {
+			assert.equal(changed.nodes['lucky-port'].value, '', 'unavailable configuration must not show stale editable values');
+			assert.equal(changed.nodes['lucky-safe-url'].value, '');
+		}
+		assert.equal(changed.calls['core-info'], undefined);
+		assert.equal(changed.calls['core-base'], undefined, 'maintenance recovery only uses non-executing status checks');
+		assert.equal(changed.nodes['lucky-refresh'].disabled, false);
+		if (ending === 'core-failed') assert.match(changed.nodes['lucky-install'].textContent, /Permission denied/);
+		if (ending === 'status-failed') assert.equal(changed.nodes['lucky-running'].textContent, 'Unable to read service status.');
+	}
+	for (const scenario of ['empty-form', 'changed-cache', 'port-edited', 'safe-url-edited', 'internet-edited']) {
+		const refreshed = fixture();
+		refreshed.context.cachedInfo = {Version:'3.2.3',Date:'cached-build'};
+		refreshed.context.availableMemory = 0;
+		if (scenario !== 'empty-form')
+			refreshed.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16601,SafeURL:'/old',AllowInternetaccess:false}};
+		await refreshed.view.render(); const initial = refreshed.timers[0]();
+		reply(refreshed, 'status', 'true'); reply(refreshed, 'arch', 'arm64'); await initial;
+		if (scenario === 'empty-form') {
+			assert.equal(refreshed.nodes['lucky-port'].value, '');
+			assert.equal(refreshed.nodes['lucky-port'].disabled, true);
+		}
+		if (scenario === 'port-edited') refreshed.nodes['lucky-port'].value = '16655';
+		if (scenario === 'safe-url-edited') refreshed.nodes['lucky-safe-url'].value = '/unsaved';
+		if (scenario === 'internet-edited') refreshed.nodes['lucky-allow-internet'].checked = true;
+		refreshed.context.ui.uploadFile = () => Promise.reject(new Error('Upload cancelled'));
+		const task = refreshed.nodes['lucky-core-upload'].click();
+		refreshed.archiveCalls[0].reply({ok:true,token}); await flush();
+		refreshed.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16609,SafeURL:'/new',AllowInternetaccess:scenario !== 'internet-edited'}};
+		refreshed.archiveCalls[1].reply({ok:true}); await flush();
+		reply(refreshed, 'status', 'true'); await task;
+		assert.equal(refreshed.nodes['lucky-port'].value, scenario === 'port-edited' ? '16655' : 16609, 'refresh untouched or previously unavailable fields');
+		assert.equal(refreshed.nodes['lucky-safe-url'].value, scenario === 'safe-url-edited' ? '/unsaved' : '/new');
+		assert.equal(refreshed.nodes['lucky-allow-internet'].checked, true, 'preserve an edited checkbox while syncing an untouched checkbox');
+		assert.equal(refreshed.nodes['lucky-admin-link'].href, 'http://localhost:16609/new', 'the admin entry follows saved configuration, not unsaved inputs');
+		for (const id of ['lucky-port', 'lucky-safe-url', 'lucky-allow-internet']) assert.equal(refreshed.nodes[id].disabled, false);
+		assert.equal(refreshed.calls['core-info'], undefined);
+		assert.equal(refreshed.calls['core-base'], undefined, 'synchronizing cached form values must not execute the core');
+	}
+	console.log('PASS: maintenance synchronizes repaired/missing cores, drops stale entries on fast-check failures and never launches metadata queries');
 	f.nodes['lucky-tab-rules'].click();
 	assert.equal(f.nodes['lucky-tab-panel-overview'].hidden, true);
 	assert.equal(f.nodes['lucky-tab-panel-rules'].hidden, false);
@@ -325,13 +456,103 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	console.log('PASS: nonblocking render, independent status, safe controls, preserved edits, RPC failure');
 	console.log('PASS: maintenance disables edits, rejects invalid ZIP before restore and cleans up uploads');
 	console.log('PASS: packed-core queries run sequentially, including recovery after a failed configuration query');
+	const cached = fixture();
+	cached.context.cachedInfo = {Version: '3.2.3', Date: 'cached-build'};
+	await cached.view.render(); const cachedLoad = cached.timers[0]();
+	reply(cached, 'status', 'true'); reply(cached, 'arch', 'x86_64'); await flush();
+	assert.equal(cached.nodes['lucky-version'].textContent, '3.2.3', 'cached info must not wait for the configuration query');
+	assert.equal(cached.calls['core-info'], undefined, 'cache hit must not launch a version query');
+	reply(cached, 'core-base', {BaseConfigure:{AdminWebListenPort:16601}}); await cachedLoad;
+	const cachedRefresh = cached.nodes['lucky-refresh'].click();
+	reply(cached, 'status', 'true'); reply(cached, 'arch', 'x86_64'); await flush();
+	reply(cached, 'core-base', {BaseConfigure:{AdminWebListenPort:16602}}); await cachedRefresh;
+	assert.equal(cached.calls['core-info'], undefined, 'manual refresh should also reuse a valid cache');
+	assert.equal(cached.nodes['lucky-port'].value, 16602, 'configuration is still queried live');
+	cached.context.cachedInfo = undefined;
+	const changedCore = cached.nodes['lucky-refresh'].click();
+	reply(cached, 'status', 'true'); reply(cached, 'arch', 'x86_64'); await flush();
+	assert.equal(cached.calls['core-info'], undefined, 'cache miss must still serialize core execution');
+	reply(cached, 'core-base', {BaseConfigure:{}}); await flush();
+	reply(cached, 'core-info', {Version:'3.2.4'}); await changedCore;
+	assert.equal(cached.nodes['lucky-version'].textContent, '3.2.4', 'a changed core must replace the displayed metadata');
+	const errorInfo = fixture(); await errorInfo.view.render(); const badInfoLoad = errorInfo.timers[0]();
+	reply(errorInfo, 'status', 'true'); reply(errorInfo, 'arch', 'x86_64'); await flush();
+	reply(errorInfo, 'core-base', {BaseConfigure:{}}); await flush();
+	reply(errorInfo, 'core-info', {ok:false,error:'Core changed during version query'}); await badInfoLoad;
+	assert.equal(errorInfo.nodes['lucky-version'].textContent, '-');
+	assert.match(errorInfo.nodes['lucky-install'].textContent, /Core changed during version query/);
+	console.log('PASS: cached versions appear immediately and survive refresh; cache misses serialize and report backend errors');
+	const both = fixture();
+	both.context.cachedInfo = {Version:'3.2.3', Date:'cached-build'};
+	both.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16603,SafeURL:'/cached',AllowInternetaccess:true}};
+	both.context.availableMemory = 0;
+	await both.view.render(); const warmLoad = both.timers[0]();
+	reply(both, 'status', 'true'); reply(both, 'arch', 'arm64'); await warmLoad;
+	assert.equal(both.calls['core-info'], undefined);
+	assert.equal(both.calls['core-base'], undefined, 'both valid caches avoid any core query, even under memory pressure');
+	assert.equal(both.nodes['lucky-admin-link'].href, 'http://localhost:16603/cached');
+	const warmRefresh = both.nodes['lucky-refresh'].click();
+	reply(both, 'status', 'false'); reply(both, 'arch', 'arm64'); await warmRefresh;
+	assert.equal(both.calls['core-base'], undefined);
+	assert.equal(both.nodes['lucky-running'].textContent, 'Stopped', 'runtime status must remain live on cache hits');
+	both.context.cachedBase = undefined; both.context.availableMemory = 512 * 1024;
+	const configChanged = both.nodes['lucky-refresh'].click();
+	reply(both, 'status', 'true'); reply(both, 'arch', 'arm64'); await flush();
+	reply(both, 'core-base', {BaseConfigure:{AdminWebListenPort:16604,SafeURL:'/changed'}}); await configChanged;
+	assert.equal(both.nodes['lucky-admin-link'].href, 'http://localhost:16604/changed');
+	assert.equal(both.calls['core-info'], undefined, 'changed config must not invalidate an unchanged core version');
+	const badBase = both.nodes['lucky-refresh'].click();
+	reply(both, 'status', 'true'); reply(both, 'arch', 'arm64'); await flush();
+	reply(both, 'core-base', {ok:false,error:'Invalid Lucky base configuration response'}); await badBase;
+	assert.equal(both.nodes['lucky-admin-link'].href, undefined, 'base query errors must not expose stale admin URLs');
+	assert.equal(both.nodes['lucky-port'].disabled, true);
+	assert.equal(both.nodes['lucky-port'].value, '');
+	assert.equal(both.nodes['lucky-safe-url'].value, '');
+	console.log('PASS: both caches skip core queries; live status, changed config and base query errors stay correct');
+	for (const [operation, button] of [
+		['set-port', 'lucky-save-port'], ['set-safe-url', 'lucky-save-safe-url'],
+		['set-internet', 'lucky-save-internet'], ['reset-auth', 'lucky-reset-auth']
+	]) {
+		const edit = fixture();
+		edit.context.cachedInfo = {Version:'3.2.3',Date:'cached'};
+		edit.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16601,SafeURL:'/old'}};
+		await edit.view.render(); const initial = edit.timers[0]();
+		reply(edit, 'status', 'true'); reply(edit, 'arch', 'arm64'); await initial;
+		edit.nodes['lucky-port'].value = '16602'; edit.nodes['lucky-safe-url'].value = '/new';
+		edit.nodes[button].click(); await flush();
+		assert.ok(edit.calls[operation]);
+		edit.context.cachedBase = undefined;
+		const output = operation === 'reset-auth' ? JSON.stringify({account:'admin',password:'a'.repeat(24),restarted:true}) : '';
+		reply(edit, operation, {ok:true,stdout:output}); await flush();
+		reply(edit, 'status', 'true'); reply(edit, 'arch', 'arm64');
+		reply(edit, 'core-base', {BaseConfigure:{AdminWebListenPort:16602,SafeURL:'/new'}}); await flush();
+		assert.equal(edit.nodes['lucky-admin-link'].href, 'http://localhost:16602/new');
+		assert.equal(edit.calls['core-info'], undefined, 'setting writes must retain the version cache');
+	}
+	const directorySave = fixture(); await directorySave.view.render();
+	const saved = directorySave.context.configMap.save(); await flush();
+	assert.ok(directorySave.calls['base-invalidate'], 'native UCI save explicitly invalidates base cache');
+	reply(directorySave, 'base-invalidate', {ok:true}); assert.equal(await saved, 'saved');
+	delete directorySave.calls['base-invalidate']; directorySave.context.saveFailure = true;
+	await assert.rejects(directorySave.context.configMap.save(), /UCI save failed/);
+	assert.equal(directorySave.calls['base-invalidate'], undefined, 'failed UCI save must retain its original error');
+	console.log('PASS: setting writes use backend invalidation and refresh data; native UCI save clears only the base cache');
+	for (const info of [{Version:'3.2.3',Date:'cached-build'}, null, {Version:''}]) {
+		const low = fixture(); low.context.availableMemory = 0; low.context.cachedInfo = info;
+		await low.view.render(); const loading = low.timers[0]();
+		reply(low, 'status', 'true'); reply(low, 'arch', 'x86_64'); await loading;
+		assert.equal(low.calls['core-base'], undefined);
+		assert.equal(low.calls['core-info'], undefined, 'a missing/invalid cache must not bypass low-memory protection');
+		assert.equal(low.nodes['lucky-version'].textContent, info && info.Version ? '3.2.3' : '-');
+	}
+	console.log('PASS: low-memory devices display validated cached metadata without executing Lucky');
 	for (const available of [0, 128 * 1024 - 1, null]) {
 		const low = fixture(); low.context.availableMemory = available;
 		await low.view.render(); const loading = low.timers[0]();
 		const running = available !== 0;
 		reply(low, 'status', String(running)); reply(low, 'arch', 'x86_64'); await loading;
-		assert.equal(low.calls.base, undefined, 'low/unknown memory must not start a packed core');
-		assert.equal(low.calls.info, undefined);
+		assert.equal(low.calls['core-base'], undefined, 'low/unknown memory must not start a packed core');
+		assert.equal(low.calls['core-info'], undefined);
 		assert.equal(low.nodes['lucky-running'].textContent, running ? 'Running' : 'Stopped');
 		assert.equal(low.nodes['lucky-service-start'].disabled, running, 'a skipped query must not block starting a stopped core');
 		assert.equal(low.nodes['lucky-backup'].disabled, false, 'backup must remain available without querying the binary');

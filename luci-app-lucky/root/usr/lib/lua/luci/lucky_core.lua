@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: Apache-2.0
 local fs, n, json = require "nixio.fs", require "nixio", require "luci.jsonc"
 local M, BIN = {}, "/usr/bin/lucky"
+local INFO_CACHE = "/tmp/lucky_core_info"
+local BASE_CACHE = "/tmp/lucky_base_info"
 local LIMIT = 128 * 1024 * 1024
 local function must(v, msg) if not v then error(msg, 0) end return v end
 local function quote(v) return "'" .. v:gsub("'", "'\\''") .. "'" end
@@ -138,7 +140,8 @@ local function unpack_core(work)
  elf(output); must(fs.chmod(output, "700"), "Cannot make candidate executable")
  return output
 end
-local function probe(path, work)
+local function query(path, work, args)
+ local limit = args[1] == "-info" and 16384 or 131072
  -- Packed executables may write their unpacked image to a memfd. RLIMIT_FSIZE
  -- limits those internal writes too; cap only stdout, through a bounded pipe.
  local input, output = n.pipe()
@@ -150,7 +153,9 @@ local function probe(path, work)
   input:close(); n.setsid()
   if not n.dup(output, n.stdout) then os.exit(127) end
   output:close()
-  n.exec("/bin/sh", "-c", "umask 077; ulimit -c 0; cd " .. quote(work) .. " && exec " .. quote(path) .. " -info </dev/null 2>/dev/null")
+  local command = quote(path)
+  for _, arg in ipairs(args) do command = command .. " " .. quote(arg) end
+  n.exec("/bin/sh", "-c", "umask 077; ulimit -c 0; cd " .. quote(work) .. " && exec " .. command .. " </dev/null 2>/dev/null")
   os.exit(127)
  end
  output:close()
@@ -159,13 +164,13 @@ local function probe(path, work)
   for _ = 1, 150 do
    while true do
     local chunk, why = input:read(4096)
-    if not chunk then must(why == 11 or why == 4, "Cannot read core version response"); break end
+    if not chunk then must(why == 11 or why == 4, "Cannot read core query response"); break end
     if #chunk == 0 then break end
-    must(#data + #chunk <= 16384, "Core version response exceeds 16 KiB")
+    must(#data + #chunk <= limit, "Core query response is too large")
     data = data .. chunk
    end
    if reaped then
-    must(state == "exited" and code == 0, "Core version query failed (" .. tostring(state) .. ": " .. tostring(code) .. ")")
+    must(state == "exited" and code == 0, "Core query failed (" .. tostring(state) .. ": " .. tostring(code) .. ")")
     return
    end
    local done
@@ -173,12 +178,22 @@ local function probe(path, work)
    reaped = done == pid
    if not reaped then n.nanosleep(0, 100000000) end
   end
-  error("Core version query timed out", 0)
+  error("Core query timed out", 0)
  end)
  input:close()
  if not reaped then n.kill(-pid, 9); n.kill(pid, 9); n.waitpid(pid) end
  must(ok, err)
- local info = json.parse(data)
+ local value = json.parse(data)
+ if not value and args[1] == "-baseConfInfo" then
+  -- 2.x may print an initialization notice before the JSON object. Accept
+  -- only a complete trailing object; never cache the notice or its contents.
+  local tail = data:match("\n(%s*{.*})%s*$")
+  if tail then value = json.parse(tail) end
+ end
+ return value
+end
+local function probe(path, work)
+ local info = query(path, work, { "-info" })
  must(type(info) == "table" and type(info.Version) == "string" and #info.Version > 0 and #info.Version <= 100, "Not a supported Lucky core (-info failed)")
  return info.Version, type(info.Date) == "string" and info.Date:sub(1, 100) or "-"
 end
@@ -186,10 +201,154 @@ local function available_memory()
  local mem = read("/proc/meminfo", 8192)
  return tonumber(mem:match("MemAvailable:%s*(%d+)")) or tonumber(mem:match("MemFree:%s*(%d+)")) or 0
 end
+-- Metadata is a cheap cache key, not an integrity check. Keep upload validation
+-- and the rule editor's version/fingerprint checks independent of this cache.
+local function info_key(st)
+ if not st or st.type ~= "reg" then return nil end
+ local parts = {}
+ for _, field in ipairs({ "dev", "ino", "size", "mtime", "ctime" }) do
+  if type(st[field]) ~= "number" then return nil end
+  parts[#parts + 1] = tostring(st[field])
+ end
+ return table.concat(parts, ":")
+end
+local function read_cache(path, key, limit)
+ local cache = fs.lstat(path)
+ if not key or not cache or cache.type ~= "reg" or cache.uid ~= 0 or cache.nlink ~= 1 or cache.modedec ~= 600 or cache.size > limit then return nil end
+ local ok, value = pcall(function() return json.parse(read(path, limit + 1)) end)
+ if not ok or type(value) ~= "table" or value.schema ~= 1 or value.fingerprint ~= key then return nil end
+ return value
+end
+local function cached_info(st)
+ local value = read_cache(INFO_CACHE, info_key(st), 4096)
+ if not value then return nil end
+ local info = value.info
+ if type(info) ~= "table" or type(info.Version) ~= "string" or #info.Version == 0 or #info.Version > 100 or
+    type(info.Date) ~= "string" or #info.Date > 100 then return nil end
+ return { Version = info.Version, Date = info.Date }
+end
+local function save_cache(work, path, key, field, value)
+ -- The caller holds the maintenance lock; work is a private root-owned /tmp
+ -- directory. Rename publishes a whole file and never follows a cache symlink.
+ local temp = work .. "/" .. field .. "-info.tmp"
+ local ok = pcall(function()
+  write(temp, json.stringify({ schema = 1, fingerprint = key, [field] = value }) .. "\n")
+  must(fs.chmod(temp, "600"), "Cannot protect core information cache")
+  must(fs.rename(temp, path), "Cannot publish core information cache")
+ end)
+ if not ok then fs.unlink(temp) end
+ -- A full/unwritable /tmp must not hide successfully queried information.
+end
+local function base_directory()
+ -- Modern JS-only installations need not ship the Lua UCI bindings.
+ local pipe = must(io.popen("/sbin/uci -q get 'lucky.@lucky[0].configdir'", "r"), "Cannot read configuration directory")
+ local dir = pipe:read("*a"):gsub("\n$", "")
+ pipe:close()
+ if dir == "" then dir = "/etc/config/lucky.daji" end
+ must(type(dir) == "string" and #dir <= 4096 and dir:sub(1, 1) == "/" and dir:sub(1, 2) ~= "//" and not dir:find("[%z\1-\31\127]"), "Lucky config directory is unsafe")
+ dir = dir:gsub("/+$", "")
+ must(dir ~= "", "Lucky config directory is unsafe")
+ for part in dir:gmatch("[^/]+") do must(part ~= "." and part ~= "..", "Lucky config directory is unsafe") end
+ for _, system in ipairs({ "/proc", "/sys", "/dev", "/run" }) do
+  must(dir ~= system and dir:sub(1, #system + 1) ~= system .. "/", "Lucky config directory is unsafe")
+ end
+ -- Read-only queries also support existing mount points and symlinked config
+ -- directories. Destructive restore/clear operations retain their stricter checks.
+ return dir
+end
+local function base_key(st, dir)
+ local core, path = info_key(st), dir .. "/lucky_base.lkcf"
+ local file = fs.stat(path)
+ local key = info_key(file)
+ if not core or not key or file.size == 0 or file.size > 1024 * 1024 then return nil end
+ local input = io.open(path, "rb")
+ if not input then return nil end
+ local crc, size = 0, 0
+ while true do
+  local block = input:read(16384)
+  if not block then break end
+  size = size + #block
+  if size > 1024 * 1024 then input:close(); return nil end
+  crc = n.bin.crc32(block, crc)
+ end
+ input:close()
+ if size ~= file.size or info_key(fs.stat(path)) ~= key then return nil end
+ -- Old cores can rewrite in place within one timestamp tick. Hash only the
+ -- small base configuration, never the large executable or the whole directory.
+ return json.stringify({ core, dir, key, tostring(crc) }), crc
+end
+local function base_fields(value)
+ local conf = type(value) == "table" and value.BaseConfigure
+ if type(conf) ~= "table" then return nil end
+ local port = tonumber(conf.AdminWebListenPort)
+ local safe = conf.SafeURL == nil and "" or conf.SafeURL
+ if not port or port ~= math.floor(port) or port < 1 or port > 65535 or type(safe) ~= "string" or #safe > 4096 then return nil end
+ if conf.AllowInternetaccess ~= nil and type(conf.AllowInternetaccess) ~= "boolean" then return nil end
+ -- Do not persist other fields returned by old cores (passwords, tokens, etc.).
+ return { BaseConfigure = { AdminWebListenPort = port, SafeURL = safe, AllowInternetaccess = conf.AllowInternetaccess } }
+end
+local function cached_base(st)
+ local value = read_cache(BASE_CACHE, base_key(st, base_directory()), 16384)
+ return value and base_fields(value.base) or nil
+end
+function M.invalidate_base()
+ local removed, code = fs.unlink(BASE_CACHE)
+ -- Another configuration save may already have removed it (ENOENT).
+ must(removed or code == 2, "Cannot invalidate base configuration cache")
+ return {}
+end
 function M.status()
  local st = fs.lstat(BIN)
  local status = not st and "missing" or (st.type ~= "reg" and "unsafe" or (fs.access(BIN, "x") and "ready" or "permissions"))
- return { status = status, path = BIN, available_memory_kib = available_memory() }
+ local ok, base
+ if status == "ready" then ok, base = pcall(cached_base, st) end
+ return { status = status, path = BIN, available_memory_kib = available_memory(), info = status == "ready" and cached_info(st) or nil, base = ok and base or nil }
+end
+function M.info(work)
+ local st = safe_target()
+ must(st and fs.access(BIN, "x"), "Lucky core is missing or not executable")
+ local info = cached_info(st)
+ if info then return info end
+ must(available_memory() >= 128 * 1024, "Not enough available memory to check core version; stop Lucky and retry")
+ local key = must(info_key(st), "Cannot inspect core metadata")
+ local version, date = probe(BIN, work)
+ must(info_key(fs.lstat(BIN)) == key, "Core changed during version query; refresh and retry")
+ info = { Version = version, Date = date }
+ save_cache(work, INFO_CACHE, key, "info", info)
+ return info
+end
+function M.base(work, remove)
+ local st = safe_target()
+ must(st and fs.access(BIN, "x"), "Lucky core is missing or not executable")
+ local dir = base_directory()
+ local file = fs.stat(dir .. "/lucky_base.lkcf")
+ must(file and file.type == "reg" and file.size > 0, "Base configuration is missing or empty; start Lucky to initialize it, then refresh")
+ local key, crc = base_key(st, dir)
+ must(key, "Cannot safely read base configuration; check its size and permissions, then refresh")
+ local cache = read_cache(BASE_CACHE, key, 16384)
+ local base = cache and base_fields(cache.base)
+ if base then return base end
+ must(available_memory() >= 128 * 1024, "Not enough available memory to read base configuration; stop Lucky and retry")
+ -- Some 2.x cores rewrite/re-encrypt the base file even on a read. Always
+ -- query a private snapshot; viewing an empty directory must not initialize it.
+ local data = read(dir .. "/lucky_base.lkcf", 1024 * 1024 + 1)
+ must(data and #data > 0 and #data <= 1024 * 1024 and n.bin.crc32(data) == crc, "Configuration changed while reading; refresh and retry")
+ local snapshot = work .. "/base-query"
+ remove(snapshot)
+ must(fs.mkdir(snapshot, "700"), "Cannot create base query workspace")
+ local ok, value = pcall(function()
+  write(snapshot .. "/lucky_base.lkcf", data)
+  return query(BIN, work, { "-baseConfInfo", "-cd", snapshot })
+ end)
+ remove(snapshot)
+ must(ok, value)
+ base = must(base_fields(value), "Invalid Lucky base configuration response")
+ must(info_key(fs.lstat(BIN)) == info_key(st), "Core changed during configuration query; refresh and retry")
+ -- A concurrent writer must not attach an old response to a new file.
+ if base_directory() == dir and base_key(st, dir) == key then
+  save_cache(work, BASE_CACHE, key, "base", base)
+ end
+ return base
 end
 function M.version(work)
  -- Avoid launching another packed core under memory pressure just to enable an editor.

@@ -36,7 +36,8 @@ local rpc_operations = {
 	["/usr/libexec/lucky-call"] = { info = 1, base = 1, status = 1, arch = 1,
 		service = 2, ["set-port"] = 2, ["set-safe-url"] = 2,
 		["set-internet"] = 2, ["reset-auth"] = 1 },
-	[HELPER] = { ["core-status"] = 1 },
+	[HELPER] = { ["core-status"] = 1, ["core-info"] = 1, ["core-base"] = 1, ["base-invalidate"] = 1,
+		["set-port"] = 2, ["set-safe-url"] = 2, ["set-internet"] = 2, ["reset-auth"] = 1 },
 	["/usr/libexec/lucky-watchdog"] = { status = 1, enable = 1, disable = 1 },
 	["/usr/libexec/lucky-diagnostics"] = { read = 1 }
 }
@@ -139,6 +140,7 @@ function M.config(data)
 			must(value ~= prefix and value:sub(1, #prefix + 1) ~= prefix .. "/", "Unsafe configuration directory")
 		end
 		must(uci:set("lucky", section, "configdir", value) and uci:save("lucky"), "Cannot save configuration")
+		require("luci.lucky_core").invalidate_base()
 		if data.operation == "apply" then
 			must(uci:commit("lucky"), "Cannot commit configuration")
 			must(uci:apply({ "lucky" }) == 0, "Configuration saved, but service reload failed")

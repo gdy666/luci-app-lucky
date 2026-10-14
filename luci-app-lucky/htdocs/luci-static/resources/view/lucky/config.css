@@ -6,7 +6,16 @@
 	--lucky-line: rgba(128, 128, 128, .24);
 	--lucky-soft: rgba(128, 128, 128, .07);
 	--lucky-accent: var(--primary, #3774bc);
+	box-sizing: border-box;
+	width: 100%;
 	min-width: 0;
+	max-width: 1440px;
+	margin-left: auto;
+	margin-right: auto;
+}
+
+.lucky-page[data-layout="stacked"] {
+	max-width: 1040px;
 }
 
 .lucky-page .lucky-dashboard {
@@ -35,6 +44,39 @@
 	flex-wrap: wrap;
 	gap: 4px;
 	min-width: 0;
+}
+
+.lucky-page .lucky-toolbar-actions,
+.lucky-page .lucky-layout-control {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.lucky-page .lucky-toolbar-actions {
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	margin-left: auto;
+}
+
+.lucky-page .lucky-layout-control label {
+	margin: 0;
+	font-size: .92em;
+}
+
+.lucky-page .lucky-layout-control select {
+	box-sizing: border-box;
+	width: auto;
+	min-width: 6em;
+	max-width: 100%;
+	height: auto;
+	min-height: 38px;
+	margin: 0;
+	padding: 6px 10px;
+	font: inherit;
+	font-size: .94em;
+	line-height: 1.5;
 }
 
 .lucky-page .lucky-tabs [role="tab"] {
@@ -79,7 +121,7 @@
 .lucky-page .lucky-maintenance-layout {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: flex-start;
+	align-items: stretch;
 	gap: 20px;
 }
 
@@ -102,6 +144,19 @@
 
 .lucky-page .lucky-overview-layout > .lucky-service-panel {
 	flex: 1.4 1 460px;
+}
+
+.lucky-page .lucky-service-panel,
+.lucky-page .lucky-admin-panel,
+.lucky-page .lucky-rule-panel {
+	display: flex;
+	flex-direction: column;
+}
+
+.lucky-page[data-layout="stacked"] .lucky-overview-layout > .lucky-panel,
+.lucky-page[data-layout="stacked"] .lucky-rules-layout > .lucky-panel,
+.lucky-page[data-layout="stacked"] .lucky-maintenance-layout > .lucky-panel {
+	flex-basis: 100%;
 }
 
 .lucky-page .lucky-maintenance-layout {
@@ -133,7 +188,10 @@
 .lucky-page .lucky-stats {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 20px 28px;
+	gap: 18px 28px;
+	padding: 16px;
+	border-radius: 4px;
+	background: var(--lucky-soft);
 }
 
 .lucky-page .lucky-stat,
@@ -171,12 +229,7 @@
 	background: #237547;
 }
 
-.lucky-page #lucky-running.lucky-state-error {
-	color: #fff;
-	background: #a33c32;
-}
-
-.lucky-page #lucky-running.lucky-state-success::before {
+.lucky-page #lucky-running::before {
 	content: "";
 	display: inline-block;
 	width: 6px;
@@ -204,6 +257,11 @@
 	gap: 8px;
 	margin: 20px 0 0;
 	padding: 0;
+}
+
+.lucky-page .lucky-service-actions {
+	padding-top: 16px;
+	border-top: 1px solid var(--lucky-line);
 }
 
 .lucky-page .cbi-button:not(.cbi-dropdown) {
@@ -256,7 +314,13 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	align-self: flex-start;
+	min-width: 11em;
 	margin-top: 18px;
+	/* Old themes have no action-button color once their GIF icons are removed. */
+	border: 1px solid var(--lucky-accent);
+	background-color: var(--lucky-accent);
+	color: #fff;
 	text-decoration: none;
 }
 
@@ -276,11 +340,32 @@
 	display: none;
 }
 
-.lucky-page .lucky-settings,
-.lucky-page .lucky-recovery {
+.lucky-page .lucky-settings {
 	margin-top: 22px;
 	padding-top: 18px;
 	border-top: 1px solid var(--lucky-line);
+}
+
+.lucky-page .lucky-admin-panel .lucky-settings {
+	margin-top: 20px;
+}
+
+.lucky-page .lucky-admin-panel .lucky-panel-intro {
+	margin: -10px 0 18px;
+}
+
+.lucky-page .lucky-recovery {
+	margin: 20px 0 0;
+	padding: 18px 22px;
+}
+
+.lucky-page .lucky-recovery-copy {
+	flex: 1 1 200px;
+	min-width: 0;
+}
+
+.lucky-page .lucky-recovery-copy .lucky-hint {
+	margin-top: 4px;
 }
 
 .lucky-page summary {
@@ -360,8 +445,7 @@
 	gap: 12px 20px;
 }
 
-.lucky-page .lucky-watchdog-row label {
-	flex: 1 1 180px;
+.lucky-page .lucky-recovery-copy label {
 	font-weight: 600;
 }
 
@@ -446,6 +530,30 @@
 	margin-bottom: 18px;
 }
 
+.lucky-page .lucky-rule-description {
+	min-height: 3.4em;
+}
+
+.lucky-page .lucky-rule-panel .lucky-format-help {
+	margin-top: auto;
+	padding-top: 12px;
+}
+
+.lucky-page[data-layout="stacked"] .lucky-rule-description {
+	min-height: 0;
+}
+
+.lucky-page .lucky-backup-panel .lucky-settings {
+	margin-top: 16px;
+	padding-top: 12px;
+}
+
+.lucky-page .lucky-danger-settings .lucky-danger-row {
+	margin-top: 12px;
+	padding-top: 0;
+	border-top: 0;
+}
+
 .lucky-page .lucky-rule-panel > label {
 	margin-top: 14px;
 }
@@ -499,6 +607,10 @@
 	box-shadow: none;
 }
 
+.lucky-page .lucky-config-form {
+	margin-top: 18px;
+}
+
 .lucky-page .lucky-config .cbi-value {
 	display: block;
 	width: 100%;
@@ -544,6 +656,7 @@
 .lucky-page button:focus,
 .lucky-page summary:focus,
 .lucky-page input:focus,
+.lucky-page select:focus,
 .lucky-page textarea:focus {
 	outline: 2px solid var(--lucky-accent);
 	outline-offset: 3px;
@@ -583,6 +696,12 @@
 		min-height: 44px;
 		padding: 8px 10px;
 	}
+	.lucky-page .lucky-toolbar-actions {
+		flex: 0 0 auto;
+	}
+	.lucky-page .lucky-layout-control {
+		display: none;
+	}
 	.lucky-page .lucky-panel {
 		padding: 16px;
 	}
@@ -593,6 +712,7 @@
 	}
 	.lucky-page .lucky-stats {
 		gap: 16px;
+		padding: 12px;
 	}
 	.lucky-page .cbi-button:not(.cbi-dropdown),
 	.lucky-page #lucky-watchdog-toggle,
@@ -606,9 +726,15 @@
 		flex-wrap: nowrap;
 		gap: 12px;
 	}
-	.lucky-page .lucky-watchdog-row label {
+	.lucky-page .lucky-recovery-copy {
 		flex: 1 1 0;
 		min-width: 0;
+	}
+	.lucky-page .lucky-recovery {
+		margin-top: 14px;
+	}
+	.lucky-page .lucky-rule-description {
+		min-height: 0;
 	}
 }
 

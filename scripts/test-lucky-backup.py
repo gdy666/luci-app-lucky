@@ -52,8 +52,9 @@ root = Path(__file__).resolve().parent.parent
 for local, remote in [
     ('luci-app-lucky/root/usr/libexec/lucky-backup', '/usr/libexec/lucky-backup'),
     ('luci-app-lucky/root/usr/lib/lua/luci/lucky_archive.lua', '/usr/lib/lua/luci/lucky_archive.lua'),
+    ('luci-app-lucky/root/usr/lib/lua/luci/lucky_core.lua', '/usr/lib/lua/luci/lucky_core.lua'),
 ]:
-    put(remote, (root / local).read_bytes(), local.endswith('lucky-backup'))
+    put(remote, (root / local).read_bytes().replace(b'\r\n', b'\n'), local.endswith('lucky-backup'))
 
 original = command('cat /etc/config/lucky')
 was_running = bool(command('pidof lucky', check=False).strip())
@@ -108,7 +109,10 @@ try:
     put(conf + '/binary.bin', b'mutated')
     put(conf + '/stale.bin', b'must disappear')
     restore = prepare(); upload(restore, data)
-    call('check', restore); call('restore', restore)
+    call('check', restore)
+    put('/tmp/lucky_base_info', b'cached-before-restore')
+    call('restore', restore)
+    assert not command('test -e /tmp/lucky_base_info && echo exists', check=False)
     assert not command('pidof lucky', check=False).strip(), 'stopped service must remain stopped'
     assert command('test ! -e ' + conf + '/stale.bin') == b''
     for name, content in backed_up.items(): assert command('cat ' + shlex.quote(conf + '/' + name)) == content, name
@@ -215,10 +219,15 @@ try:
     reply = json.loads(command('lua ' + wrapper + ' clear ' + clear))
     assert not reply['ok'] and command('cat ' + other + '/after-preview') == b'keep'
     assert command('pidof lucky').strip(), 'failed clear must resume service'
-    call('clear-check', clear); call('clear', clear)
+    call('clear-check', clear)
+    put('/tmp/lucky_base_info', b'cached-before-clear')
+    call('clear', clear)
+    assert not command('test -e /tmp/lucky_base_info && echo exists', check=False)
     assert not command('pidof lucky', check=False).strip(), 'clear must leave service stopped'
+    assert call('core-status').get('base') is None
+    call('core-base', success=False)
     command('test -d ' + other)
-    assert command('ls -A ' + other).strip() == b'', 'hidden files and subdirectories must disappear'
+    assert command('ls -A ' + other).strip() == b'', 'hidden files and subdirectories must disappear and refresh must not recreate them'
     call('clear-check', clear); call('clear', clear)
     put(other + '/unrelated.db', b'keep unrelated')
     call('clear-check', clear, success=False); call('clear', clear, success=False)
