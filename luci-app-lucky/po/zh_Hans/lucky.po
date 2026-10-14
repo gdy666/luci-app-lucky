@@ -1,6 +1,42 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "Session expired. Reload this page and sign in again."
+msgstr "登录已过期，请刷新页面并重新登录。"
+
+msgid "Choose file"
+msgstr "选择文件"
+
+msgid "Choose a non-empty file no larger than 64 MiB."
+msgstr "请选择非空文件，大小不能超过 64 MiB。"
+
+msgid "Uploading…"
+msgstr "正在上传…"
+
+msgid "Upload"
+msgstr "上传"
+
+msgid "Upload cancelled."
+msgstr "已取消上传。"
+
+msgid "Upload file"
+msgstr "上传文件"
+
+msgid "Configuration applied."
+msgstr "配置已应用。"
+
+msgid "Changes saved. Apply them to reload Lucky."
+msgstr "修改已保存，应用后将重新加载 Lucky。"
+
+msgid "Save & Apply"
+msgstr "保存并应用"
+
+msgid "Reset"
+msgstr "复位"
+
+msgid "Unable to load the Lucky page. Reload to retry."
+msgstr "无法加载 Lucky 页面，请刷新重试。"
+
 msgid "Admin access policy"
 msgstr "管理后台访问策略"
 

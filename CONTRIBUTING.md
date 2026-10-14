@@ -25,7 +25,11 @@ sh -n lucky/files/lucky-call
 sh -n lucky/files/lucky-watchdog
 msgfmt --check --check-compatibility -o /dev/null luci-app-lucky/po/zh_Hans/lucky.po
 python3 scripts/check-po.py luci-app-lucky/po/zh_Hans/lucky.po \
-  luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js
+  luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js \
+  luci-app-lucky/htdocs/luci-static/resources/view/lucky/legacy.js \
+  luci-app-lucky/root/usr/lib/lua/luci/view/lucky/legacy.htm
+lua5.1 scripts/test-lucky-controller.lua
+lua5.1 scripts/test-lucky-legacy.lua
 python3 scripts/check-build-matrix.py scripts/build-matrix.json
 python3 scripts/check-sdk-tags.py scripts/build-matrix.json \
   --apk-version 25.12.5 --ipk-version 24.10.8

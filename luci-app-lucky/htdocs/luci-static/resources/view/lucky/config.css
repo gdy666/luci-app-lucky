@@ -215,6 +215,9 @@
 	min-height: 38px;
 	margin: 0;
 	padding: 8px 14px;
+	/* Lua-era themes add GIF icons as button backgrounds. Keep text buttons
+	 * consistent instead of combining those icons with our compact padding. */
+	background-image: none !important;
 	border-radius: 4px;
 	font: inherit;
 	font-size: .94em;
@@ -591,7 +594,7 @@
 	.lucky-page .lucky-stats {
 		gap: 16px;
 	}
-	.lucky-page .cbi-button,
+	.lucky-page .cbi-button:not(.cbi-dropdown),
 	.lucky-page #lucky-watchdog-toggle,
 	.lucky-page #lucky-config-actions .cbi-dropdown:not([open]) {
 		min-height: 44px;

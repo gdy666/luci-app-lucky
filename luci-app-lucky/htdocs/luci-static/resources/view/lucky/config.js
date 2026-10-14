@@ -677,7 +677,7 @@ function diagnosticsPanel() {
 function renderDashboard(formNode) {
 	var dashboard = E('div', { 'class': 'lucky-dashboard' }, [
 		// LuCI versions its view scripts, but custom stylesheet URLs need their own revision.
-		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') + '?v=3.0.0-14' }),
+		E('link', { 'rel': 'stylesheet', 'href': L.resource('view/lucky/config.css') }),
 		E('div', { 'class': 'lucky-toolbar' }, [
 		E('div', {'class':'lucky-tabs','role':'tablist','aria-label':_('Lucky sections')}, tabNames.map(function(key, index) {
 			return E('button', {'type':'button','id':'lucky-tab-' + key,'role':'tab','aria-controls':'lucky-tab-panel-' + key,'aria-selected':index === 0 ? 'true' : 'false','tabindex':index === 0 ? '0' : '-1','click':function() { selectTab(key); },'keydown':function(event) {
@@ -707,8 +707,8 @@ function renderDashboard(formNode) {
 			]),
 			E('div', { 'class': 'lucky-actions' }, [
 				serviceButton(_('Start'), 'cbi-button-apply', 'start'),
-				serviceButton(_('Restart'), 'cbi-button-reload', 'restart'),
-				serviceButton(_('Stop'), 'cbi-button-reset', 'stop')
+				serviceButton(_('Restart'), 'cbi-button-action', 'restart'),
+				serviceButton(_('Stop'), 'cbi-button-negative', 'stop')
 			]),
 			E('div', { 'class': 'lucky-recovery' }, [
 				E('div', { 'class': 'lucky-watchdog-row' }, [

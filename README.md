@@ -10,6 +10,8 @@ OpenWrt 的 Lucky 核心包与 LuCI 管理界面，支持服务管理、打开 L
 
 支持 OpenWrt 19.07、21.02、22.03、23.05、24.10（IPK）及 25.12 / Snapshot（APK）。请选择与设备的 OpenWrt 版本和包架构匹配的软件包。
 
+支持原生 JavaScript LuCI，以及 Lean/LEDE 的旧式 Lua LuCI：两者使用同一份管理页面，旧式 LuCI 自动加载插件专用的兼容接口，不替换系统 LuCI 文件。不能仅凭固件日期或内核版本判断 LuCI 类型。
+
 ## 安装与升级
 
 将对应的软件包上传到路由器 `/tmp`，在路由器终端执行。

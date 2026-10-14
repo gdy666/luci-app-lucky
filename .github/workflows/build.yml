@@ -34,12 +34,18 @@ jobs:
             luci-app-lucky/root/usr/share/rpcd/acl.d/luci-app-lucky.json
           node -e "new Function(require('fs').readFileSync(process.argv[1], 'utf8'));" \
             luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js
+          node --check luci-app-lucky/htdocs/luci-static/resources/view/lucky/legacy.js
+          luac5.1 -p luci-app-lucky/root/usr/lib/lua/luci/lucky_legacy.lua
           node scripts/test-lucky-view.js
+          lua5.1 scripts/test-lucky-controller.lua
+          lua5.1 scripts/test-lucky-legacy.lua
           LUA_PATH='./luci-app-lucky/root/usr/lib/lua/?.lua;;' \
             lua5.1 scripts/test-lucky-diagnostics.lua --parse-only
           msgfmt --check --check-compatibility -o /dev/null luci-app-lucky/po/zh_Hans/lucky.po
           python3 scripts/check-po.py luci-app-lucky/po/zh_Hans/lucky.po \
-            luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js
+            luci-app-lucky/htdocs/luci-static/resources/view/lucky/config.js \
+            luci-app-lucky/htdocs/luci-static/resources/view/lucky/legacy.js \
+            luci-app-lucky/root/usr/lib/lua/luci/view/lucky/legacy.htm
           python3 scripts/check-build-matrix.py scripts/build-matrix.json
 
   build:
@@ -103,6 +109,8 @@ jobs:
           grep -qx './usr/libexec/lucky-call' <<<"$core_files"
           luci_files="$(tar -xzOf "$luci_ipk" ./data.tar.gz | tar -tzf -)"
           grep -qx './usr/lib/lua/luci/controller/lucky.lua' <<<"$luci_files"
+          grep -qx './usr/lib/lua/luci/view/lucky/legacy.htm' <<<"$luci_files"
+          grep -qx './usr/lib/lua/luci/lucky_legacy.lua' <<<"$luci_files"
           grep -Eq '^\./www/luci-static/resources/view/lucky/config-[0-9_]+-[0-9]+\.js$' <<<"$luci_files"
           grep -qx './usr/share/luci/menu.d/luci-app-lucky.json' <<<"$luci_files"
           grep -qx './usr/share/rpcd/acl.d/luci-app-lucky.json' <<<"$luci_files"

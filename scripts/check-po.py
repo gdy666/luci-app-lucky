@@ -44,8 +44,14 @@ def main():
         return 1
 
     if len(sys.argv) > 2:
-        javascript = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
-        used = set(re.findall(r"_\('([^']*)'\)", javascript))
+        used = set()
+        for source in sys.argv[2:]:
+            path = pathlib.Path(source)
+            content = path.read_text(encoding="utf-8")
+            if path.suffix == ".htm":
+                used.update(re.findall(r"<%:(.*?)%>", content, re.DOTALL))
+            else:
+                used.update(re.findall(r"_\('([^']*)'\)", content))
         missing = used - seen
         unused = seen - used
         if missing or unused:
