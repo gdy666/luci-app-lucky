@@ -5,7 +5,7 @@ include $(INCLUDE_DIR)/version.mk
 
 PKG_NAME:=luci-app-lucky
 PKG_VERSION:=3.0.0
-PKG_RELEASE:=25
+PKG_RELEASE:=26
 LUCKY_ASSET_VERSION:=$(subst .,_,$(PKG_VERSION))-$(PKG_RELEASE)
 LUCKY_VIEW_NAME:=config-$(LUCKY_ASSET_VERSION)
 
@@ -54,6 +54,24 @@ fi
 exit 0
 endef
 
+# Keep the canonical catalog in po/zh_Hans. Older Lean/LEDE luci.mk has no
+# language aliases and would generate an unselected, unusable zh_Hans package.
+# This recursive variable is evaluated after luci.mk defines its aliases.
+override LUCI_LANGUAGES = $(if $(LUCI_LC_ALIAS.zh_Hans),zh_Hans)
+
 include $(TOPDIR)/feeds/luci/luci.mk
+
+ifeq ($(LUCI_LC_ALIAS.zh_Hans),)
+  $(eval $(call LuciTranslation,zh-cn))
+
+  define Package/luci-i18n-lucky-zh-cn/install
+	$(INSTALL_DIR) $(1)/etc/uci-defaults $(1)$(LUCI_LIBRARYDIR)/i18n
+	echo "uci set luci.languages.zh_cn='$(LUCI_LANG.zh-cn)'; uci commit luci" \
+		> $(1)/etc/uci-defaults/luci-i18n-lucky-zh-cn
+	po2lmo $(CURDIR)/po/zh_Hans/lucky.po $(1)$(LUCI_LIBRARYDIR)/i18n/lucky.zh-cn.lmo
+  endef
+
+  $(eval $(call BuildPackage,luci-i18n-lucky-zh-cn))
+endif
 
 # call BuildPackage - OpenWrt buildroot signature
