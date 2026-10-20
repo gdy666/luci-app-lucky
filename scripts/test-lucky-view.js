@@ -24,9 +24,16 @@ function fixture(storage) {
 		document: { getElementById: id => nodes[id], querySelectorAll: () => Object.values(nodes).filter(n => /^(button|input)$/.test(n.tag)) },
 		window: { localStorage: storage, location: { hostname: 'localhost' }, setTimeout: fn => timers.push(fn), confirm: () => true },
 		view: { extend: value => value }, ui: { addNotification: (title, body) => notices.push(body), uploadFile: () => Promise.resolve(), showModal: () => {}, hideModal: () => {} },
-		request: { post: (url, body, options) => new Promise(resolve => {
+		request: { post: (url, body, options) => new Promise((resolve, reject) => {
 			assert.equal(options.timeout, 0, 'maintenance must not time out while Lucky is stopped');
 			const command = new URLSearchParams(body).get('command').split(' ');
+			if (command[1] === 'configure') {
+				assert.equal(command.length, 3, 'settings use one CGI argument, including empty/quoted values');
+				const args = JSON.parse(decodeURIComponent(command[2]));
+				assert.equal(command[0], '/usr/libexec/lucky-backup');
+				calls[args[0]] = { args, resolve: response => resolve({status:200, json:() => JSON.parse(response.stdout)}), reject };
+				return;
+			}
 			archiveCalls.push({ operation: command[1], token: command[2], reply: result => resolve({ status: 200, json: () => result }) });
 		}) },
 		form: { Map: function() {
@@ -47,11 +54,13 @@ function fixture(storage) {
 						return;
 					}
 					if (args[0] === 'core-status') {
+						if (context.deferCoreStatus) { calls['core-status'] = { resolve, reject }; return; }
 						if (context.coreReply !== undefined) { resolve(context.coreReply); return; }
 						resolve({ code: 0, stdout: JSON.stringify({ ok: true, status: context.coreStatus || 'ready', info: context.cachedInfo, base: context.cachedBase, available_memory_kib: context.availableMemory === undefined ? 512 * 1024 : context.availableMemory }) }); return;
 					}
 					if (/^(core-(info|base)|base-invalidate|set-port|set-safe-url|set-internet|reset-auth)$/.test(args[0]))
 						assert.equal(command, '/usr/libexec/lucky-backup', 'cache-sensitive operations must use the locked backend helper');
+					assert.ok(!/^(set-port|set-safe-url|set-internet|reset-auth)$/.test(args[0]), 'stop/write/restart must bypass the RPC deadline');
 					calls[args[0]] = { resolve, reject };
 				});
 			},
@@ -120,6 +129,9 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	reply(f, 'status', 'true');
 	reply(f, 'arch', 'x86_64');
 	await flush();
+	assert.equal(f.nodes['lucky-core-upload'].disabled, true, 'active core query holds the maintenance lock');
+	await f.nodes['lucky-core-upload'].click();
+	assert.equal(f.archiveCalls.length, 0, 'do not race upload with an active core query');
 	assert.equal(f.nodes['lucky-running'].textContent, 'Running');
 	assert.equal(f.nodes['lucky-port'].disabled, true);
 	assert.equal(f.nodes['lucky-admin-link'].href, undefined);
@@ -175,13 +187,15 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	assert.equal(failed.nodes['lucky-admin-link'].href, undefined);
 	assert.match(failed.nodes['lucky-install'].textContent, /Permission denied/);
 	assert.equal(failed.nodes['lucky-refresh'].disabled, false, 'allow retry after failure');
+	assert.equal(failed.nodes['lucky-core-upload'].disabled, false, 'failed binary query must release upload');
 
 	for (const [response, message] of [
 		[6, 'Permission denied'],
 		[{ code: 127 }, 'Command failed (exit code 127).'],
 		[{ code: 1, stderr: "module 'luci.jsonc' not found" }, "module 'luci.jsonc' not found"],
 		[{ code: 0, stdout: '{"ok":false,"error":"Cannot open backup lock"}' }, 'Cannot open backup lock'],
-		[{ code: 0, stdout: 'invalid json' }, 'Invalid response from Core status.']
+		[{ code: 0, stdout: 'invalid json' }, 'Invalid response from Core status.'],
+		[{ code: 0, stdout: '{"ok":true,"status":"unknown"}' }, 'Unable to inspect core.']
 	]) {
 		const broken = fixture(); broken.context.coreReply = response;
 		await broken.view.render(); const loading = broken.timers[0]();
@@ -189,6 +203,7 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 		assert.ok(broken.nodes['lucky-install'].textContent.includes(message), 'keep the original inspection failure');
 		assert.equal(broken.calls['core-base'], undefined, 'failed inspection must not launch core queries');
 		assert.equal(broken.calls['core-info'], undefined);
+		assert.equal(broken.nodes['lucky-core-upload'].disabled, false, 'inspection failure must leave upload available');
 		assert.equal(broken.nodes['lucky-running'].textContent, 'Running');
 		assert.equal(broken.nodes['lucky-service-stop'].disabled, false);
 		assert.equal(broken.nodes['lucky-refresh'].disabled, false);
@@ -255,13 +270,20 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 		assert.equal(f.nodes['lucky-clear'].disabled, false);
 	}
 	console.log('PASS: clear requires file-list confirmation; cancel never deletes; confirmed clear calls backend');
+	for (const health of ['missing', 'permissions', 'unsafe']) {
+		const unavailable = fixture(); unavailable.context.coreStatus = health;
+		await unavailable.view.render();
+		const loading = unavailable.timers[0](); await flush();
+		assert.equal(unavailable.nodes['lucky-core-upload'].disabled, false, health + ': slow status reads must not block upload');
+		assert.equal(unavailable.calls['core-base'], undefined, 'do not query an unavailable core');
+		assert.equal(unavailable.calls['core-info'], undefined);
+		reply(unavailable, 'status', 'false'); reply(unavailable, 'arch', 'x86_64'); await loading;
+		assert.equal(unavailable.nodes['lucky-core-upload'].disabled, false);
+	}
 	const missing = fixture(); missing.context.coreStatus = 'missing';
 	await missing.view.render();
+	assert.equal(missing.nodes['lucky-core-upload'].disabled, false, 'upload is available before initial inspection');
 	const missingLoad = missing.timers[0]();
-	await flush();
-	missing.calls['core-base'].resolve({ code: 127, stderr: 'Lucky is not installed' });
-	await flush();
-	missing.calls['core-info'].resolve({ code: 127, stderr: 'Lucky is not installed' });
 	reply(missing, 'status', 'false'); reply(missing, 'arch', 'x86_64'); await missingLoad;
 	assert.equal(missing.nodes['lucky-core-upload'].disabled, false, 'missing core must not block upload');
 	assert.equal(missing.nodes['lucky-core-fix'].disabled, true);
@@ -274,10 +296,57 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	missing.archiveCalls[j++].reply({ ok: false, error: 'Wrong architecture' }); await flush();
 	assert.equal(missing.archiveCalls[j].operation, 'cleanup');
 	missing.archiveCalls[j].reply({ ok: true }); await flush();
-	missing.calls['core-base'].resolve({ code: 127 }); await flush(); missing.calls['core-info'].resolve({ code: 127 });
 	reply(missing, 'status', 'false'); reply(missing, 'arch', 'x86_64'); await uploadCore;
 	assert.equal(missing.archiveCalls.some(c => c.operation === 'core-install'), false);
 	console.log('PASS: missing core allows upload; invalid core never reaches replacement');
+	for (const lateHealth of ['ready', 'missing', 'error']) {
+		const repair = fixture(); repair.context.deferCoreStatus = true;
+		await repair.view.render();
+		const stalledLoad = repair.timers[0](); await flush();
+		const oldCalls = { ...repair.calls };
+		assert.equal(repair.nodes['lucky-core-upload'].disabled, false, 'stalled inspection must not block repair');
+		let modal;
+		repair.context.ui.showModal = (title, children) => { modal = { title, children }; };
+		const uploading = repair.nodes['lucky-core-upload'].click();
+		let i = 0;
+		assert.equal(repair.archiveCalls[i].operation, 'core-prepare');
+		assert.equal(repair.nodes['lucky-core-upload'].disabled, true, 'prevent duplicate maintenance');
+		await repair.nodes['lucky-core-upload'].click();
+		assert.equal(repair.archiveCalls.length, 1);
+		repair.archiveCalls[i++].reply({ ok: true, token }); await flush();
+		assert.equal(repair.archiveCalls[i].operation, 'core-check');
+		repair.archiveCalls[i++].reply({ ok: true, bytes: 24000000 }); await flush();
+		assert.equal(modal.title, 'Replace core');
+		modal.children.at(-1).textContent[2].click(); await flush();
+		assert.equal(repair.archiveCalls[i].operation, 'core-install');
+		repair.archiveCalls[i++].reply({ ok: true, version: '3.3.3', date: 'repaired', running: false }); await flush();
+		repair.context.deferCoreStatus = false;
+		repair.context.cachedInfo = { Version: '3.3.3', Date: 'repaired' };
+		repair.context.cachedBase = { BaseConfigure: { AdminWebListenPort: 16601 } };
+		assert.equal(repair.archiveCalls[i].operation, 'cleanup');
+		repair.archiveCalls[i].reply({ ok: true }); await flush();
+		reply(repair, 'status', 'false'); reply(repair, 'arch', 'x86_64'); await uploading;
+		assert.equal(repair.nodes['lucky-core-health'].textContent, 'Executable');
+		assert.equal(repair.nodes['lucky-version'].textContent, '3.3.3');
+		if (lateHealth === 'error') oldCalls['core-status'].reject(new Error('Old inspection failed'));
+		else oldCalls['core-status'].resolve({ code: 0, stdout: JSON.stringify({
+			ok: true, status: lateHealth, info: { Version: 'old' },
+			base: { BaseConfigure: { AdminWebListenPort: 19999 } }, available_memory_kib: 512 * 1024
+		}) });
+		oldCalls.status.resolve({ code: 0, stdout: 'true' });
+		oldCalls.arch.resolve({ code: 0, stdout: 'old-arch' });
+		await stalledLoad;
+		assert.equal(repair.nodes['lucky-core-health'].textContent, 'Executable', 'late inspection must not undo repair');
+		assert.equal(repair.nodes['lucky-version'].textContent, '3.3.3');
+		assert.equal(repair.nodes['lucky-install'].textContent, 'Installed');
+		assert.equal(repair.nodes['lucky-running'].textContent, 'Stopped');
+		assert.equal(repair.nodes['lucky-arch'].textContent, 'x86_64');
+		assert.equal(repair.nodes['lucky-port'].value, 16601);
+		assert.equal(repair.calls['core-base'], undefined, 'abandoned refresh must never launch the new core');
+		assert.equal(repair.calls['core-info'], undefined);
+		assert.equal(repair.nodes['lucky-core-upload'].disabled, false);
+	}
+	console.log('PASS: upload repairs undetectable cores while status is pending; late replies cannot overwrite repaired state');
 	for (const confirm of [false, true]) {
 		let modal;
 		f.context.ui.showModal = (title, children) => { modal = { title, children }; };
@@ -482,6 +551,17 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	assert.equal(errorInfo.nodes['lucky-version'].textContent, '-');
 	assert.match(errorInfo.nodes['lucky-install'].textContent, /Core changed during version query/);
 	console.log('PASS: cached versions appear immediately and survive refresh; cache misses serialize and report backend errors');
+	for (const [version, online] of [
+		['2.27.2', false], ['3.3.99', false], ['3.4.0', true],
+		['v3.4.0', true], ['3.10.0', true], ['4.0.0', true], ['3.4.0-beta', false], ['dev', false]
+	]) {
+		const versioned = fixture();
+		versioned.context.cachedInfo = {Version:version};
+		versioned.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16601}};
+		await versioned.view.render(); const loading = versioned.timers[0]();
+		reply(versioned, 'status', 'true'); reply(versioned, 'arch', 'x86_64'); await loading;
+		assert.equal(versioned.nodes['lucky-access-hint'].textContent.includes('without restarting'), online, version);
+	}
 	const both = fixture();
 	both.context.cachedInfo = {Version:'3.2.3', Date:'cached-build'};
 	both.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16603,SafeURL:'/cached',AllowInternetaccess:true}};
@@ -509,6 +589,17 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	assert.equal(both.nodes['lucky-port'].value, '');
 	assert.equal(both.nodes['lucky-safe-url'].value, '');
 	console.log('PASS: both caches skip core queries; live status, changed config and base query errors stay correct');
+	for (const policy of [undefined, false, true]) {
+		const edit = fixture();
+		edit.context.cachedInfo = {Version:'3.3.3',Date:'cached'};
+		edit.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16601,SafeURL:'/old',AllowInternetaccess:policy}};
+		await edit.view.render(); const initial = edit.timers[0]();
+		reply(edit, 'status', 'true'); reply(edit, 'arch', 'arm64'); await initial;
+		assert.equal(edit.nodes['lucky-internet'].textContent,
+			policy === undefined ? 'Not reported by this core' : (policy ? 'Allowed' : 'Local access only'));
+		assert.equal(edit.nodes['lucky-allow-internet'].indeterminate, policy === undefined);
+		assert.equal(edit.nodes['lucky-allow-internet'].checked, policy === true);
+	}
 	for (const [operation, button] of [
 		['set-port', 'lucky-save-port'], ['set-safe-url', 'lucky-save-safe-url'],
 		['set-internet', 'lucky-save-internet'], ['reset-auth', 'lucky-reset-auth']
@@ -521,13 +612,56 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 		edit.nodes['lucky-port'].value = '16602'; edit.nodes['lucky-safe-url'].value = '/new';
 		edit.nodes[button].click(); await flush();
 		assert.ok(edit.calls[operation]);
+		if (operation !== 'reset-auth') {
+			for (const id of ['lucky-save-safe-url', 'lucky-save-port', 'lucky-service-start',
+				'lucky-service-stop', 'lucky-service-restart', 'lucky-refresh'])
+				assert.equal(edit.nodes[id].disabled, true, id + ' must wait for the save transaction');
+			assert.equal(edit.nodes['lucky-admin-link'].href, undefined, 'hide the old entry during a save');
+			const pending = edit.calls[operation];
+			edit.nodes[button].click(); await flush();
+			assert.equal(edit.calls[operation], pending, 'ignore duplicate saves');
+		}
 		edit.context.cachedBase = undefined;
 		const output = operation === 'reset-auth' ? JSON.stringify({account:'admin',password:'a'.repeat(24),restarted:true}) : '';
 		reply(edit, operation, {ok:true,stdout:output}); await flush();
 		reply(edit, 'status', 'true'); reply(edit, 'arch', 'arm64');
-		reply(edit, 'core-base', {BaseConfigure:{AdminWebListenPort:16602,SafeURL:'/new'}}); await flush();
-		assert.equal(edit.nodes['lucky-admin-link'].href, 'http://localhost:16602/new');
+		reply(edit, 'core-base', {BaseConfigure:{AdminWebListenPort:16602,SafeURL:'/normalized'}}); await flush();
+		assert.equal(edit.nodes['lucky-admin-link'].href, 'http://localhost:16602/normalized');
+		assert.equal(edit.nodes['lucky-safe-url'].value, '/normalized', 'show the entry the core actually saved');
 		assert.equal(edit.calls['core-info'], undefined, 'setting writes must retain the version cache');
+	}
+	for (const restarted of [false, true]) {
+		const reset = fixture();
+		reset.context.cachedInfo = {Version:'3.3.3',Date:'cached'};
+		reset.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16601,SafeURL:'/old'}};
+		await reset.view.render(); const initial = reset.timers[0]();
+		reply(reset, 'status', 'true'); reply(reset, 'arch', 'arm64'); await initial;
+		let modal;
+		reset.context.ui.showModal = (title, children) => { modal = {title, children}; };
+		reset.nodes['lucky-reset-auth'].click();
+		reply(reset, 'reset-auth', {
+			ok:true, stdout:JSON.stringify({account:'admin',password:'a'.repeat(24),restarted}),
+			warning:'Lucky could not restart; start it manually'
+		}); await flush();
+		assert.equal(modal.title, 'Admin credentials reset', 'a recovery warning must not discard the changed credentials');
+		assert.match(JSON.stringify(modal.children), /a{24}/);
+		assert.match(JSON.stringify(modal.children), /Restart it manually after saving this password/);
+		reply(reset, 'status', 'false'); reply(reset, 'arch', 'arm64'); await flush();
+		assert.equal(reset.nodes['lucky-admin-link'].href, undefined);
+	}
+	for (const result of [{ok:false,error:'write failed'}, {ok:true,stdout:'saved',warning:'Lucky could not restart'}]) {
+		const edit = fixture();
+		edit.context.cachedInfo = {Version:'3.3.3',Date:'cached'};
+		edit.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16601,SafeURL:'/old'}};
+		await edit.view.render(); const initial = edit.timers[0]();
+		reply(edit, 'status', 'true'); reply(edit, 'arch', 'arm64'); await initial;
+		edit.nodes['lucky-safe-url'].value = '/new'; edit.nodes['lucky-save-safe-url'].click();
+		reply(edit, 'set-safe-url', result); await flush();
+		assert.equal(edit.notices.length, 1, 'do not report success when saving or restarting fails');
+		reply(edit, 'status', 'false'); reply(edit, 'arch', 'arm64'); await flush();
+		assert.equal(edit.nodes['lucky-running'].textContent, 'Stopped', 'refresh state after failures too');
+		assert.equal(edit.nodes['lucky-save-safe-url'].disabled, false, 'allow retry');
+		assert.equal(edit.nodes['lucky-admin-link'].href, undefined);
 	}
 	const directorySave = fixture(); await directorySave.view.render();
 	const saved = directorySave.context.configMap.save(); await flush();
@@ -537,6 +671,18 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	await assert.rejects(directorySave.context.configMap.save(), /UCI save failed/);
 	assert.equal(directorySave.calls['base-invalidate'], undefined, 'failed UCI save must retain its original error');
 	console.log('PASS: setting writes use backend invalidation and refresh data; native UCI save clears only the base cache');
+	for (const value of ['', "/entry'quoted", '/路径%25\\value']) {
+		const encoded = fixture();
+		encoded.context.cachedInfo = {Version:'3.3.3',Date:'cached'};
+		encoded.context.cachedBase = {BaseConfigure:{AdminWebListenPort:16601,SafeURL:'/old'}};
+		await encoded.view.render(); const initial = encoded.timers[0]();
+		reply(encoded, 'status', 'true'); reply(encoded, 'arch', 'arm64'); await initial;
+		encoded.nodes['lucky-safe-url'].value = value;
+		encoded.nodes['lucky-save-safe-url'].click();
+		assert.deepEqual(Array.from(encoded.calls['set-safe-url'].args), ['set-safe-url', value]);
+		reply(encoded, 'set-safe-url', {ok:true,stdout:'saved'}); await flush();
+		reply(encoded, 'status', 'true'); reply(encoded, 'arch', 'arm64'); await flush();
+	}
 	for (const info of [{Version:'3.2.3',Date:'cached-build'}, null, {Version:''}]) {
 		const low = fixture(); low.context.availableMemory = 0; low.context.cachedInfo = info;
 		await low.view.render(); const loading = low.timers[0]();

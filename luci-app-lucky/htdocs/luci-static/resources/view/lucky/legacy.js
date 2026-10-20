@@ -182,9 +182,11 @@
 	};
 	var request = { post: function(url, body) {
 		var command = new URLSearchParams(body).get('command');
-		var parts = /^\/usr\/libexec\/lucky-backup ([a-z-]+)(?: ([a-f0-9]{32}))?$/.exec(command || '');
+		var parts = /^\/usr\/libexec\/lucky-backup ([a-z-]+)(?: ([^\s]+))?$/.exec(command || '');
 		if (!parts) return Promise.reject(new Error(_('The operation failed.')));
-		return api('archive', { operation: parts[1], workspace: parts[2] }).then(function(result) {
+		var data = { operation: parts[1] };
+		data[parts[1] === 'configure' ? 'argument' : 'workspace'] = parts[2];
+		return api('archive', data).then(function(result) {
 			return { status: 200, json: function() { return result; } };
 		});
 	} };

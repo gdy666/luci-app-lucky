@@ -73,8 +73,12 @@ try:
  print('PASS: service-start failure restores previous core',flush=True)
  cmd('/etc/init.d/lucky stop');cmd('rm /usr/bin/lucky')
  assert call('core-status')['status']=='missing';call('core-fix',ok=False)
+ # Start a fresh upload with no existing core; preparing/checking must not
+ # depend on information from the executable that the upload is repairing.
+ t=prepare();upload(t,archive(core));info=call('core-check',t)
+ assert info['bytes']==len(core) and not cmd('pidof lucky',False).strip()
  call('core-install',t);assert cmd('cat /usr/bin/lucky')==core;assert not cmd('pidof lucky',False).strip()
- print('PASS: missing core repaired by upload; stopped service remains stopped',flush=True)
+ print('PASS: fresh upload prepares, checks and repairs a missing core; stopped service remains stopped',flush=True)
  cmd('rm /usr/bin/lucky; ln -s /bin/busybox /usr/bin/lucky')
  assert call('core-status')['status']=='unsafe';call('core-fix',ok=False);call('core-install',t,False)
  print('PASS: symlink core rejected',flush=True)

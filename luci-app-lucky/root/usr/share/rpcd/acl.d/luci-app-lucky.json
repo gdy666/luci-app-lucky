@@ -2,6 +2,9 @@
   "luci-app-lucky": {
     "description": "Grant access to the Lucky administration page",
     "read": {
+      "cgi-io": [
+        "exec"
+      ],
       "file": {
         "/usr/libexec/lucky-watchdog status": [
           "exec"
@@ -37,6 +40,9 @@
     },
     "write": {
       "file": {
+        "/usr/libexec/lucky-backup configure *": [
+          "exec"
+        ],
         "/usr/libexec/lucky-backup base-invalidate": [
           "exec"
         ],

@@ -16,7 +16,10 @@ var callHelper = rpc.declare({
 	nobatch: true
 });
 var resetInProgress = false;
+var actionInProgress = false;
 var refreshInProgress = false;
+var refreshGeneration = 0;
+var coreQueryInProgress = false;
 var backupInProgress = false;
 var watchdogState = { ready: false, busy: false, data: null, error: null };
 var state = {
@@ -33,14 +36,25 @@ var state = {
 	date: '-',
 	port: 16601,
 	safeURL: '',
-	allowInternet: false
+	allowInternet: null
 };
+
+function supportsLocalControl(version) {
+	var parts = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version || '');
+	return !!parts && (+parts[1] > 3 || (+parts[1] === 3 && +parts[2] >= 4));
+}
 
 function helper(args, program) {
 	var command = program || HELPER;
 	var configUpdate = command === HELPER && [ 'set-port', 'set-safe-url', 'set-internet', 'reset-auth' ].indexOf(args[0]) !== -1;
 	if (configUpdate) command = '/usr/libexec/lucky-backup';
-	return callHelper(command, args).then(function(res) {
+	// Stop/write/restart can exceed rpcd's file.exec deadline. Use the same
+	// long-running transport as backup/restore; encode one argv envelope to
+	// preserve empty values and avoid CGI command-line parsing differences.
+	var task = configUpdate ? archiveCall('configure', encodeURIComponent(JSON.stringify(args))).then(function(result) {
+		return { code: 0, stdout: JSON.stringify(result) };
+	}) : callHelper(command, args);
+	return task.then(function(res) {
 		if (!res || typeof res !== 'object')
 			throw new Error(rpc.getStatusText(res));
 		if (typeof res.code === 'number' && res.code !== 0) {
@@ -52,6 +66,15 @@ function helper(args, program) {
 		if (configUpdate) {
 			var result = parseJSON(output, 'Lucky configuration update');
 			if (!result || !result.ok) throw new Error(result && result.error || _('The operation failed.'));
+			if (result.warning) {
+				if (args[0] !== 'reset-auth')
+					throw new Error(_('Configuration saved, but Lucky could not restart. Start it manually.'));
+				// Credentials have already changed. Preserve them even if the
+				// outer service recovery disagrees with the old helper's result.
+				var credentials = parseJSON(result.stdout || '', 'lucky-call reset-auth');
+				credentials.restarted = false;
+				return JSON.stringify(credentials);
+			}
 			return (result.stdout || '').trim();
 		}
 		return output;
@@ -77,12 +100,14 @@ function applyBaseConfiguration(base) {
 	state.configReady = true;
 	state.port = Math.floor(port) === port && port >= 1 && port <= 65535 ? port : 16601;
 	state.safeURL = typeof config.SafeURL === 'string' ? config.SafeURL : '';
-	state.allowInternet = config.AllowInternetaccess === true;
+	state.allowInternet = typeof config.AllowInternetaccess === 'boolean' ? config.AllowInternetaccess : null;
 }
 
 function loadState() {
-	if (refreshInProgress || backupInProgress)
+	if (refreshInProgress || backupInProgress || actionInProgress)
 		return Promise.resolve();
+	var generation = ++refreshGeneration;
+	function current() { return generation === refreshGeneration; }
 	refreshInProgress = true;
 	state.loading = true;
 	state.error = null;
@@ -94,14 +119,17 @@ function loadState() {
 	state.version = state.date = "-";
 	updateDashboard(false);
 	function failed(err) {
+		if (!current()) return;
 		// Keep the first cause; dependent and later requests must not hide it.
 		if (!state.error)
 			state.error = err && err.message ? err.message : _('Unable to load Lucky data.');
 		updateDashboard(false);
 	}
 	var coreQuery = helper([ 'core-status' ], '/usr/libexec/lucky-backup').then(function(value) {
+		if (!current()) return null;
 		var core = parseJSON(value, 'Core status');
-		if (!core || !core.ok) throw new Error(core && core.error || _('Unable to inspect core.'));
+		if (!core || !core.ok || [ 'ready', 'missing', 'permissions', 'unsafe' ].indexOf(core.status) === -1)
+			throw new Error(core && core.error || _('Unable to inspect core.'));
 		state.core = core.status;
 		state.installed = core.status === 'ready';
 		updateDashboard(false);
@@ -109,14 +137,27 @@ function loadState() {
 	});
 	function queryCore(operation) {
 		return coreQuery.then(function(core) {
+			if (!current() || !core || core.status !== 'ready') return null;
 			// A single packed-core query can still exhaust 128/256 MiB devices.
 			// Skip it when headroom is low; status and log reads never run the core.
 			if (typeof core.available_memory_kib !== 'number' || core.available_memory_kib < 128 * 1024)
 				throw new Error(_('Not enough available memory for core queries. Stop Lucky and refresh to retry. Service status and logs remain available.'));
+			// Only an active binary query needs to finish before maintenance can
+			// take the backend lock. Unavailable status RPCs must not block upload.
+			coreQueryInProgress = true;
+			updateDashboard(false);
 			return helper([ 'core-' + operation ], '/usr/libexec/lucky-backup').then(function(value) {
 				var result = parseJSON(value, 'Core ' + operation);
 				if (!result || !result.ok) throw new Error(result && result.error || _('Unable to load Lucky data.'));
 				return result;
+			}).then(function(result) {
+				coreQueryInProgress = false;
+				updateDashboard(false);
+				return result;
+			}, function(err) {
+				coreQueryInProgress = false;
+				updateDashboard(false);
+				throw err;
 			});
 		});
 	}
@@ -124,26 +165,30 @@ function loadState() {
 	// when queries run together, so finish the configuration query before -info.
 	// Fast status/architecture reads stay independent of these two queries.
 	var baseQuery = coreQuery.then(function(core) {
-		if (core.status === 'ready' && core.base && core.base.BaseConfigure)
+		if (!current() || !core || core.status !== 'ready') return null;
+		if (core.base && core.base.BaseConfigure)
 			return core.base;
 		return queryCore('base');
 	}).then(function(base) {
+		if (!current() || !base) return;
 		state.installed = true;
 		applyBaseConfiguration(base);
 		updateDashboard(true);
 	}).catch(failed);
 	var infoQuery = coreQuery.then(function(core) {
+		if (!current() || !core || core.status !== 'ready') return null;
 		// Validated on the router against the current executable. Cached metadata
 		// is safe to show even when memory pressure prevents a fresh core query.
-		if (core.status === 'ready' && core.info && typeof core.info.Version === 'string' && core.info.Version.length)
+		if (core.info && typeof core.info.Version === 'string' && core.info.Version.length)
 			return core.info;
 		return baseQuery.then(function() { return queryCore('info'); });
 	});
 
 	return Promise.all([
-		loadWatchdog(),
+		loadWatchdog(current),
 		coreQuery.catch(failed),
 		infoQuery.then(function(info) {
+			if (!current() || !info) return;
 			state.installed = true;
 			state.infoReady = true;
 			state.version = info.Version || '-';
@@ -152,15 +197,18 @@ function loadState() {
 		}).catch(failed),
 		baseQuery,
 		helper([ 'status' ]).then(function(value) {
+			if (!current()) return;
 			state.running = value === 'true';
 			state.runtimeReady = true;
 			updateRuntimeStatus();
 		}).catch(failed),
 		helper([ 'arch' ]).then(function(value) {
+			if (!current()) return;
 			state.arch = value || '-';
 			updateText('lucky-arch', state.arch);
 		}).catch(failed)
 	]).then(function() {
+		if (!current()) return state;
 		state.loading = false;
 		refreshInProgress = false;
 		updateDashboard(false);
@@ -173,12 +221,14 @@ function notifyError(err) {
 	ui.addNotification(null, E('p', {}, message));
 }
 
-function loadWatchdog() {
+function loadWatchdog(current) {
 	return helper([ 'status' ], '/usr/libexec/lucky-watchdog').then(function(value) {
+		if (current && !current()) return;
 		watchdogState.data = parseJSON(value, 'Watchdog');
 		watchdogState.ready = true;
 		watchdogState.error = null;
 	}).catch(function() {
+		if (current && !current()) return;
 		watchdogState.ready = false;
 		watchdogState.error = _('Unable to read recovery settings. Install the matching updated Lucky core package.');
 	}).then(updateWatchdog);
@@ -225,10 +275,16 @@ function toggleWatchdog() {
 }
 
 function action(args, successMessage) {
+	if (actionInProgress || refreshInProgress || resetInProgress || backupInProgress)
+		return Promise.resolve();
+	actionInProgress = true;
+	updateDashboard(false);
 	return helper(args).then(function() {
 		ui.addNotification(null, E('p', {}, successMessage), 'info');
+	}, notifyError).then(function() {
+		actionInProgress = false;
 		return loadState();
-	}).catch(notifyError);
+	});
 }
 
 function textRow(label, id) {
@@ -285,7 +341,7 @@ function updateRuntimeStatus() {
 	updateText('lucky-running', !state.runtimeReady ? (state.loading ? _('Collecting data…') : _('Unable to read service status.')) : (state.running ? _('Running') : _('Stopped')), state.runtimeReady && state.running ? 'success' : '');
 
 	var link = document.getElementById('lucky-admin-link');
-	var accessible = state.runtimeReady && state.running && state.configReady;
+	var accessible = state.runtimeReady && state.running && state.configReady && !actionInProgress;
 	if (link) {
 		link.textContent = accessible ? _('Open admin panel') : (state.loading ? _('Collecting data…') : _('Available when the service is running'));
 		updateText('lucky-admin-address', accessible ? adminURL() : '');
@@ -301,9 +357,9 @@ function updateRuntimeStatus() {
 		}
 	}
 
-	setDisabled('lucky-service-start', !state.installed || !state.runtimeReady || refreshInProgress || state.running);
-	setDisabled('lucky-service-restart', !state.installed || !state.runtimeReady || refreshInProgress);
-	setDisabled('lucky-service-stop', !state.runtimeReady || refreshInProgress || !state.running);
+	setDisabled('lucky-service-start', !state.installed || !state.runtimeReady || refreshInProgress || actionInProgress || state.running);
+	setDisabled('lucky-service-restart', !state.installed || !state.runtimeReady || refreshInProgress || actionInProgress);
+	setDisabled('lucky-service-stop', !state.runtimeReady || refreshInProgress || actionInProgress || !state.running);
 }
 
 function updateDashboard(updateInputs) {
@@ -316,13 +372,18 @@ function updateDashboard(updateInputs) {
 	var health = { ready: _('Executable'), missing: _('Core missing'), permissions: _('Execution permission missing'), unsafe: _('Unsafe core path'), unknown: _('Unable to inspect core.') };
 	updateText('lucky-core-health', health[state.core] || health.unknown);
 	setDisabled('lucky-core-fix', state.core !== 'permissions' || refreshInProgress || backupInProgress || resetInProgress);
-	setDisabled('lucky-core-upload', refreshInProgress || backupInProgress || resetInProgress);
+	setDisabled('lucky-core-upload', coreQueryInProgress || backupInProgress || resetInProgress);
 	if (state.core === 'missing' || state.core === 'permissions' || state.core === 'unsafe')
 		updateText('lucky-install', health[state.core], 'error');
 	updateText('lucky-arch', state.arch);
 	updateText('lucky-version', !state.infoReady && state.loading ? _('Collecting data…') : state.version);
 	updateText('lucky-date', !state.infoReady && state.loading ? _('Collecting data…') : state.date);
-	updateText('lucky-internet', !state.configReady ? (state.loading ? _('Collecting data…') : '-') : (state.allowInternet ? _('Allowed') : _('Local access only')), state.configReady && state.allowInternet ? 'warning' : '');
+	updateText('lucky-access-hint', state.infoReady && supportsLocalControl(state.version) ?
+		_('Access settings apply without restarting a running Lucky. A stopped service stays stopped.') :
+		_('Saving access settings briefly stops Lucky. It starts again only if it was running.'));
+	updateText('lucky-internet', !state.configReady ? (state.loading ? _('Collecting data…') : '-') :
+		(state.allowInternet === null ? _('Not reported by this core') : (state.allowInternet ? _('Allowed') : _('Local access only'))),
+		state.configReady && state.allowInternet ? 'warning' : '');
 
 	var port = document.getElementById('lucky-port');
 	var safeURL = document.getElementById('lucky-safe-url');
@@ -331,12 +392,14 @@ function updateDashboard(updateInputs) {
 		port.value = state.port;
 	if (safeURL && updateInputs)
 		safeURL.value = state.safeURL;
-	if (internet && updateInputs)
-		internet.checked = state.allowInternet;
+	if (internet && updateInputs) {
+		internet.checked = state.allowInternet === true;
+		internet.indeterminate = state.allowInternet === null;
+	}
 	if (!state.configReady && !state.loading) {
 		if (port) port.value = '';
 		if (safeURL) safeURL.value = '';
-		if (internet) internet.checked = false;
+		if (internet) { internet.checked = false; internet.indeterminate = false; }
 	}
 
 	setDisabled('lucky-port', !state.configReady);
@@ -352,6 +415,11 @@ function updateDashboard(updateInputs) {
 	updateRuntimeStatus();
 	updateRuleEditors();
 	updateWatchdog();
+	if (actionInProgress) {
+		[ 'lucky-refresh', 'lucky-save-port', 'lucky-save-safe-url', 'lucky-save-internet',
+			'lucky-reset-auth', 'lucky-backup', 'lucky-restore', 'lucky-clear',
+			'lucky-core-fix', 'lucky-core-upload' ].forEach(function(id) { setDisabled(id, true); });
+	}
 }
 
 function archiveCall(operation, token) {
@@ -365,7 +433,7 @@ function archiveCall(operation, token) {
 			if (response.status !== 200)
 				throw new Error(_('Backup operation failed.'));
 			var result = response.json();
-			if (result.warning)
+			if (result.warning && operation !== 'configure')
 				ui.addNotification(null, E('p', {}, result.warning), 'warning');
 			if (!result.ok)
 				throw new Error(result.error || _('Backup operation failed.'));
@@ -374,16 +442,24 @@ function archiveCall(operation, token) {
 }
 
 function coreMaintenance(upload) {
-	if (backupInProgress || refreshInProgress || resetInProgress) return Promise.resolve();
+	if (backupInProgress || resetInProgress || actionInProgress || coreQueryInProgress || (!upload && refreshInProgress))
+		return Promise.resolve();
 	if (upload && !window.confirm(_('Upload a trusted Lucky Linux tar.gz release for this device. Only the core executable will be replaced; configuration is preserved. Continue?')))
 		return Promise.resolve();
+	var refreshPending = refreshInProgress || state.loading;
+	// An upload can repair a missing or undetectable core. Discard late reads
+	// from the old refresh so they cannot launch queries or undo its result.
+	++refreshGeneration;
+	refreshInProgress = false;
+	state.loading = false;
 	backupInProgress = true;
 	var token, installedInfo, saved = [];
 	// Refresh untouched fields when a valid cache becomes available, while
 	// preserving edits made before maintenance started.
 	var syncPort = !state.configReady || String(document.getElementById('lucky-port').value) === String(state.port);
 	var syncSafeURL = !state.configReady || document.getElementById('lucky-safe-url').value === state.safeURL;
-	var syncInternet = !state.configReady || document.getElementById('lucky-allow-internet').checked === state.allowInternet;
+	var internetInput = document.getElementById('lucky-allow-internet');
+	var syncInternet = !state.configReady || (state.allowInternet === null ? internetInput.indeterminate : internetInput.checked === state.allowInternet);
 	Array.prototype.forEach.call(document.querySelectorAll('.lucky-page button, .lucky-page input, .lucky-page select'), function(node) {
 		if (node.id && node.id.indexOf('lucky-diagnostics-') === 0) return;
 		saved.push([node, node.disabled]); node.disabled = true;
@@ -436,6 +512,10 @@ function coreMaintenance(upload) {
 		// Reuse the stopped-core probe's metadata. Running -info/-baseConfInfo
 		// alongside the restarted service can OOM on 256 MiB devices.
 		return Promise.all([
+			refreshPending ? loadWatchdog() : null,
+			refreshPending ? helper([ 'arch' ]).then(function(value) {
+				state.arch = value || '-';
+			}).catch(failed) : null,
 			helper([ 'status' ]).then(function(value) {
 				state.running = value === 'true'; state.runtimeReady = true;
 			}).catch(failed),
@@ -465,7 +545,10 @@ function coreMaintenance(upload) {
 			if (state.configReady) {
 				if (syncPort) document.getElementById('lucky-port').value = state.port;
 				if (syncSafeURL) document.getElementById('lucky-safe-url').value = state.safeURL;
-				if (syncInternet) document.getElementById('lucky-allow-internet').checked = state.allowInternet;
+				if (syncInternet) {
+					internetInput.checked = state.allowInternet === true;
+					internetInput.indeterminate = state.allowInternet === null;
+				}
 			}
 			updateDashboard(false);
 		});
@@ -846,7 +929,7 @@ function renderPage(formNode) {
 			E('div', { 'id': 'lucky-admin-address', 'class': 'lucky-value' }),
 			E('details', { 'class': 'lucky-settings' }, [
 				E('summary', {}, _('Access settings')),
-				E('p', { 'class': 'lucky-hint' }, _('Save changes, then restart Lucky to apply them.')),
+				E('p', { 'class': 'lucky-hint', 'id': 'lucky-access-hint' }),
 				E('div', { 'class': 'lucky-inline' }, [
 					E('label', { 'for': 'lucky-port' }, _('Admin HTTP port')),
 					E('input', { 'id': 'lucky-port', 'class': 'cbi-input-text', 'type': 'number', 'min': '1', 'max': '65535' }),
@@ -860,7 +943,7 @@ function renderPage(formNode) {
 								notifyError(new Error(_('Enter a port from 1 to 65535.')));
 								return;
 							}
-							action([ 'set-port', port ], _('Admin port updated. Restart Lucky to apply it.'));
+							action([ 'set-port', port ], _('Admin port saved.'));
 						}
 					}, _('Save'))
 				]),
@@ -877,7 +960,7 @@ function renderPage(formNode) {
 								notifyError(new Error(_('The safe URL must be empty or begin with / and contain no spaces.')));
 								return;
 							}
-							action([ 'set-safe-url', value ], _('Admin safe URL updated. Restart Lucky to apply it.'));
+							action([ 'set-safe-url', value ], _('Admin safe URL saved.'));
 						}
 					}, _('Save'))
 				]),
@@ -892,7 +975,7 @@ function renderPage(formNode) {
 							var enabled = document.getElementById('lucky-allow-internet').checked;
 							if (enabled && !window.confirm(_('Exposing the admin panel to the Internet increases risk. Continue?')))
 								return;
-							action([ 'set-internet', enabled ? 'true' : 'false' ], _('Admin access policy updated. Restart Lucky to apply it.'));
+							action([ 'set-internet', enabled ? 'true' : 'false' ], _('Admin access policy saved.'));
 						}
 					}, _('Save'))
 				]),
@@ -972,7 +1055,7 @@ function renderPage(formNode) {
 	]);
 
 	Array.prototype.forEach.call(dashboard.querySelectorAll('button, input'), function(node) {
-		if (node.id && node.id.indexOf('lucky-') === 0 && node.id.indexOf('lucky-tab-') !== 0 && node.id.indexOf('lucky-diagnostics-') !== 0) node.disabled = true;
+		if (node.id && node.id !== 'lucky-core-upload' && node.id.indexOf('lucky-') === 0 && node.id.indexOf('lucky-tab-') !== 0 && node.id.indexOf('lucky-diagnostics-') !== 0) node.disabled = true;
 	});
 	// Do not hold LuCI's view loader open while starting the Lucky binary.
 	window.setTimeout(loadState, 0);

@@ -150,7 +150,12 @@ if setter then
  source, count = source:gsub('local CONFIG_HELPER = "/usr/libexec/lucky%%-call"', function()
   return 'local CONFIG_HELPER = ' .. string.format("%%q", setter)
  end)
- assert(count == 1); source = source:gsub("^#!", "--"); assert(loadstring(source))()
+ assert(count == 1)
+ -- These cache fixtures must never stop the installed service. Lifecycle
+ -- behavior is exercised separately with real cores by test-lucky-settings.py.
+ source, count = source:gsub("target = core.config_directory%%(%%)\\n.-\\n%%s*core.invalidate_base%%(%%)", "core.invalidate_base()")
+ assert(count == 1)
+ source = source:gsub("^#!", "--"); assert(loadstring(source))()
 else dofile("/usr/libexec/lucky-backup") end
 ''' % tuple(map(json.dumps, (binary, cache, base_cache, selected, cache, base_cache))))
     command('mkdir -p ' + shlex.quote(config_dir)); put(selected, config_dir)

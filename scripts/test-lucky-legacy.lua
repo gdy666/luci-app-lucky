@@ -113,6 +113,13 @@ for _, operation in ipairs({ "get", "save", "apply" }) do
 end
 result = run("archive", { csrf = "csrf", operation = "backup", workspace = token })
 expect(status == 200 and result == "streamed-result", "maintenance response must stream outside pcall")
+result = run("archive", { csrf = "csrf", operation = "configure", argument = "%5B%22set-safe-url%22%2C%22%22%5D" })
+expect(status == 200 and result == "streamed-result" and #calls == 0, "settings must bypass ubus and stream outside pcall")
+reject("archive", { csrf = "csrf", operation = "configure" }, 400)
+reject("archive", { csrf = "csrf", operation = "configure", argument = "bad payload" }, 400)
+reject("archive", { csrf = "csrf", operation = "configure", argument = string.rep("a", 4097) }, 400)
+reject("archive", { csrf = "csrf", operation = "configure", argument = "%5B%5D", workspace = token }, 400)
+reject("archive", { csrf = "csrf", operation = "core-fix", argument = "%5B%5D" }, 400)
 print("PASS: root authentication, CSRF, method/size limits, command whitelist, session isolation and Lua 5.1 streaming")
 
 local meta = { csrf = "csrf", workspace = token, name = "rules.json" }

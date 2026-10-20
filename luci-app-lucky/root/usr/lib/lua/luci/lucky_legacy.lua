@@ -42,7 +42,7 @@ local rpc_operations = {
 	["/usr/libexec/lucky-diagnostics"] = { read = 1 }
 }
 local archive_operations = {
-	prepare = false, ["core-prepare"] = false, ["core-fix"] = false,
+	prepare = false, ["core-prepare"] = false, ["core-fix"] = false, configure = false,
 	["rules-localips"] = false, ["rules-allowlist"] = false,
 	backup = true, check = true, restore = true, cleanup = true,
 	["clear-check"] = true, clear = true, ["core-check"] = true,
@@ -74,6 +74,14 @@ function M.archive(data)
 	local needs_token = archive_operations[data.operation]
 	must(needs_token ~= nil, "Unsupported maintenance operation")
 	if needs_token then workspace(data.workspace) else must(data.workspace == nil, "Unexpected workspace ID") end
+	local argument = data.workspace
+	if data.operation == "configure" then
+		must(type(data.argument) == "string" and #data.argument <= 4096 and
+			data.argument:match("^[%w%%%.!~*'()_%-]+$"), "Invalid configuration payload")
+		argument = data.argument
+	else
+		must(data.argument == nil, "Unexpected maintenance argument")
+	end
 	must(fs.access(HELPER, "x"), "Lucky maintenance helper is not installed")
 	local input, output = n.pipe()
 	must(input and output, "Cannot create maintenance pipe")
@@ -86,7 +94,7 @@ function M.archive(data)
 		local null = n.open("/dev/null", "r+")
 		n.dup(null, n.stdin); n.dup(null, n.stderr); n.dup(output, n.stdout)
 		output:close(); null:close()
-		if needs_token then n.exec(HELPER, data.operation, data.workspace)
+		if argument then n.exec(HELPER, data.operation, argument)
 		else n.exec(HELPER, data.operation) end
 		os.exit(127)
 	end
@@ -103,7 +111,7 @@ function M.archive(data)
 		end
 		input:close(); n.waitpid(pid)
 	end
-	if needs_token then
+	if needs_token or data.operation == "configure" then
 		-- LuCI's HTTP writer yields; Lua 5.1 cannot yield through pcall().
 		-- Dispatch executes this response writer after protected validation.
 		return function()

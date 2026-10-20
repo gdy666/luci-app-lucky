@@ -49,8 +49,8 @@ msgstr "无法加载 Lucky 页面，请刷新重试。"
 msgid "Admin access policy"
 msgstr "管理后台访问策略"
 
-msgid "Admin access policy updated. Restart Lucky to apply it."
-msgstr "管理后台访问策略已更新，重启 Lucky 后生效。"
+msgid "Admin access policy saved."
+msgstr "管理后台访问策略已保存。"
 
 msgid "Admin credentials reset"
 msgstr "管理凭据已重置"
@@ -61,14 +61,17 @@ msgstr "管理后台 HTTP 端口"
 msgid "Admin panel"
 msgstr "管理后台"
 
-msgid "Admin port updated. Restart Lucky to apply it."
-msgstr "管理端口已更新，重启 Lucky 后生效。"
+msgid "Admin port saved."
+msgstr "管理端口已保存。"
 
 msgid "Admin safe URL"
 msgstr "管理后台安全入口"
 
-msgid "Admin safe URL updated. Restart Lucky to apply it."
-msgstr "安全入口已更新，重启 Lucky 后生效。"
+msgid "Admin safe URL saved."
+msgstr "安全入口已保存。"
+
+msgid "Configuration saved, but Lucky could not restart. Start it manually."
+msgstr "配置已保存，但 Lucky 未能重新启动，请手动启动。"
 
 msgid "Allow Internet access to the admin panel"
 msgstr "允许从互联网访问管理后台"
@@ -126,6 +129,9 @@ msgstr "加载错误：%s"
 
 msgid "Local access only"
 msgstr "仅限本地访问"
+
+msgid "Not reported by this core"
+msgstr "当前核心未提供此状态"
 
 msgid "Lucky"
 msgstr "Lucky"
@@ -205,8 +211,11 @@ msgstr "服务状态与后台管理"
 msgid "Access settings"
 msgstr "访问设置"
 
-msgid "Save changes, then restart Lucky to apply them."
-msgstr "保存设置后，重启 Lucky 生效。"
+msgid "Saving access settings briefly stops Lucky. It starts again only if it was running."
+msgstr "保存访问设置时会短暂停止 Lucky；仅在原本运行时自动重新启动。"
+
+msgid "Access settings apply without restarting a running Lucky. A stopped service stays stopped."
+msgstr "访问设置在线生效，无需重启 Lucky；已停止的服务会保持停止。"
 
 msgid "Only reset credentials if you cannot sign in."
 msgstr "仅在无法登录时重置管理账号密码。"

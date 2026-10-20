@@ -168,7 +168,6 @@ local function validate(path)
 end
 local function update_config()
 	local core = require "luci.lucky_core"
-	core.invalidate_base()
 	local output = ROOT .. "/config-output"
 	local errors = ROOT .. "/config-error"
 	local words = { quote(CONFIG_HELPER) }
@@ -176,8 +175,43 @@ local function update_config()
 		must(type(value) == "string" and #value <= 512 and not value:find("[%z\1-\31\127]"), "Invalid configuration argument")
 		words[#words + 1] = quote(value)
 	end
-	-- Keep old core packages working: their setter remains authoritative. Run
-	-- it under the same lock as cached reads, and invalidate even on partial failure.
+	if arg[1] == "set-port" then
+		local port = tonumber(arg[2])
+		must(arg[2]:match("^%d+$") and port and port >= 1 and port <= 65535, "Port must be an integer from 1 to 65535")
+	elseif arg[1] == "set-safe-url" then
+		must(#arg[2] <= 256 and not arg[2]:find("%s") and (arg[2] == "" or arg[2]:sub(1, 1) == "/"), "Invalid safe URL")
+	elseif arg[1] == "set-internet" then
+		must(arg[2] == "true" or arg[2] == "false", "Internet access must be true or false")
+	end
+	target = core.config_directory()
+	local directory = fs.stat(target)
+	must(directory and directory.type == "dir", "Configuration directory must exist")
+	must(fs.access("/usr/bin/lucky", "x"), "Lucky core is missing or not executable")
+	local online = false
+	if arg[1] ~= "reset-auth" and running() then
+		local ok, info = pcall(core.info, ROOT)
+		online = ok and core.supports_local_control(info.Version)
+	end
+	if online then
+		words = { quote("/usr/bin/lucky"), "-cd", quote(target) }
+		if arg[1] == "set-port" then
+			words[#words + 1] = "-rSetHttpAdminPort"
+			words[#words + 1] = quote(arg[2])
+		elseif arg[1] == "set-safe-url" and arg[2] == "" then
+			words[#words + 1] = "-rCancelSafeURL"
+		else
+			words[#words + 1] = arg[1] == "set-safe-url" and "-rSetSafeURL" or "-rSetAllowInternetaccess"
+			words[#words + 1] = quote(arg[2])
+		end
+	else
+		-- Older cores and stopped services use the offline writer. The common
+		-- cleanup resumes only an originally running service, even on failure.
+		stop()
+		must(not running(), "Lucky was started by another operation; configuration was not changed")
+	end
+	core.invalidate_base()
+	-- Invalidate even on partial failure. Once a local command is sent, never
+	-- retry via the offline writer: the running core may already have saved it.
 	local code = os.execute(table.concat(words, " ") .. " >" .. quote(output) .. " 2>" .. quote(errors))
 	local file = io.open(output, "rb")
 	local text = file and file:read(16384) or ""
@@ -193,12 +227,26 @@ end
 local function main()
 	ensure_root()
 	local operation, token = arg[1], arg[2]
+	if operation == "configure" then
+		-- URI-encoded JSON is a single non-empty CGI argument even when a
+		-- setting value is empty. Only the existing setting commands are allowed.
+		must(#arg == 2 and #token <= 4096 and token:match("^[%w%%%.!~*'()_%-]+$"), "Invalid configuration payload")
+		local values = json.parse((token:gsub("%%(%x%x)", function(hex) return string.char(tonumber(hex, 16)) end)))
+		must(type(values) == "table" and config_operations[values[1]] == #values, "Invalid configuration command")
+		arg = values
+		operation, token = arg[1], arg[2]
+	end
 	local rules_open = operation == "rules-localips" or operation == "rules-allowlist"
 	local config_update = config_operations[operation]
 	must(operation and #arg == (config_update or ((rules_open or operation == "prepare" or operation == "core-prepare" or operation == "core-status" or operation == "core-info" or operation == "core-base" or operation == "base-invalidate" or operation == "core-fix") and 1 or 2)), "Invalid backup arguments")
 	if operation == "core-status" then return require("luci.lucky_core").status() end
 	lock(config_update or operation == "core-info" or operation == "core-base" or operation == "base-invalidate")
-	if config_update then return update_config() end
+	if config_update then
+		-- Native cgi-exec may lose its HTTP worker; service recovery must finish.
+		-- The legacy gateway already starts its helper in a separate session.
+		nixio.setsid()
+		return update_config()
+	end
 	if operation == "base-invalidate" then return require("luci.lucky_core").invalidate_base() end
 	if operation == "core-info" then return require("luci.lucky_core").info(ROOT) end
 	if operation == "core-base" then return require("luci.lucky_core").base(ROOT, remove) end
@@ -339,9 +387,14 @@ if stage then
 end
 -- Never restart against a missing directory after a failed rollback.
 if resume and target and fs.lstat(target) then
-	local started = run({ INIT, "start" })
-	for _ = 1, 5 do if running() then break end; nixio.nanosleep(1) end
-	if not started or not running() then warnings[#warnings + 1] = "Lucky could not restart; start it manually" end
+	local started = running() or run({ INIT, "start" })
+	local recovered = false
+	for _ = 1, 5 do
+		local seen = running()
+		nixio.nanosleep(1)
+		if seen and running() then recovered = true; break end
+	end
+	if not started or not recovered then warnings[#warnings + 1] = "Lucky could not restart; start it manually" end
 end
 if locked then locked:close() end
 local reply = ok and result or { error = tostring(result) }

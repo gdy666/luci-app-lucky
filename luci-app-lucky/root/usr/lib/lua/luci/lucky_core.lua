@@ -6,6 +6,12 @@ local BASE_CACHE = "/tmp/lucky_base_info"
 local LIMIT = 128 * 1024 * 1024
 local function must(v, msg) if not v then error(msg, 0) end return v end
 local function quote(v) return "'" .. v:gsub("'", "'\\''") .. "'" end
+function M.supports_local_control(version)
+ if type(version) ~= "string" then return false end
+ local major, minor, patch = version:match("^v?(%d+)%.(%d+)%.(%d+)$")
+ -- Unrecognized/development builds keep the established offline save path.
+ return major ~= nil and (tonumber(major) > 3 or (tonumber(major) == 3 and tonumber(minor) >= 4))
+end
 local function read(path, limit)
  local f = must(io.open(path, "rb"), "Cannot read core file")
  local s = f:read(limit or "*a"); f:close(); return s
@@ -256,6 +262,9 @@ local function base_directory()
  -- directories. Destructive restore/clear operations retain their stricter checks.
  return dir
 end
+-- Access-setting writes modify files in place, so existing mount points and
+-- symlinked directories remain valid. Directory replacement has its own policy.
+M.config_directory = base_directory
 local function base_key(st, dir)
  local core, path = info_key(st), dir .. "/lucky_base.lkcf"
  local file = fs.stat(path)
