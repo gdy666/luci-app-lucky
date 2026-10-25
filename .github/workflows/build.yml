@@ -47,6 +47,7 @@ jobs:
             luci-app-lucky/htdocs/luci-static/resources/view/lucky/legacy.js \
             luci-app-lucky/root/usr/lib/lua/luci/view/lucky/legacy.htm
           python3 scripts/check-build-matrix.py scripts/build-matrix.json
+          python3 scripts/test-lucky-i18n.py
 
   build:
     needs: static-checks

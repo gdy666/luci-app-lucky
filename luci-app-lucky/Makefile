@@ -5,7 +5,7 @@ include $(INCLUDE_DIR)/version.mk
 
 PKG_NAME:=luci-app-lucky
 PKG_VERSION:=3.0.0
-PKG_RELEASE:=28
+PKG_RELEASE:=29
 LUCKY_ASSET_VERSION:=$(subst .,_,$(PKG_VERSION))-$(PKG_RELEASE)
 LUCKY_VIEW_NAME:=config-$(LUCKY_ASSET_VERSION)
 
@@ -58,6 +58,17 @@ endef
 # language aliases and would generate an unselected, unusable zh_Hans package.
 # This recursive variable is evaluated after luci.mk defines its aliases.
 override LUCI_LANGUAGES = $(if $(LUCI_LC_ALIAS.zh_Hans),zh_Hans)
+
+# Newer base-files runs and removes uci-defaults before postinst-pkg. Old
+# luci.mk unconditionally sources the removed file, so keep this fallback
+# idempotent while still registering the language on older firmware.
+override define Package/luci-i18n-lucky-zh-cn/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+defaults=/etc/uci-defaults/luci-i18n-lucky-zh-cn
+[ -f "$$defaults" ] || exit 0
+(. "$$defaults") && rm -f "$$defaults"
+endef
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
