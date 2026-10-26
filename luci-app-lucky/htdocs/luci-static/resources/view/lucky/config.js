@@ -6,6 +6,7 @@
 'require ui';
 'require fs';
 'require request';
+'require session';
 
 var HELPER = '/usr/libexec/lucky-call';
 // Keep the fast status request out of the slow binary-query RPC batch.
@@ -42,6 +43,35 @@ var state = {
 function supportsLocalControl(version) {
 	var parts = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version || '');
 	return !!parts && (+parts[1] > 3 || (+parts[1] === 3 && +parts[2] >= 4));
+}
+
+function refreshCachedMenu() {
+	// A direct visit after SSH installation may still use the pre-install menu
+	// stored in this browser tab. Invalidate only that menu, then reload once.
+	// Lua-only LuCI has no such cache and must not depend on this API.
+	if (typeof session === 'undefined' || !session.getLocalData || !session.setLocalData || !ui.menu || !ui.menu.flushCache)
+		return false;
+	try {
+		var cached = session.getLocalData('menu');
+		if (!cached || typeof cached !== 'object') return false;
+		var admin = cached.children && cached.children.admin;
+		var services = admin && admin.children && admin.children.services;
+		var lucky = services && services.children && services.children.lucky;
+		if (lucky && lucky.title && lucky.satisfied !== false) {
+			session.setLocalData('luckyMenuRefresh', null);
+			return false;
+		}
+		// An ACL or dependency problem can also hide the freshly fetched menu.
+		// Do not keep reloading if invalidating its cache did not resolve that.
+		if (session.getLocalData('luckyMenuRefresh') || !session.setLocalData('luckyMenuRefresh', true))
+			return false;
+		ui.menu.flushCache();
+		// A browser rejecting storage writes must not enter a reload loop.
+		if (session.getLocalData('menu') != null) return false;
+		window.location.reload();
+		return true;
+	}
+	catch (e) { return false; }
 }
 
 function helper(args, program) {
@@ -1072,6 +1102,8 @@ return view.extend({
 		return E([]);
 	},
 	render: function() {
+		if (refreshCachedMenu())
+			return E('p', { 'class': 'spinning' }, _('Refreshing…'));
 		var map = new form.Map('lucky');
 		// Native LuCI saves the directory through UCI. Lua-only LuCI performs
 		// the same invalidation in its config endpoint instead.

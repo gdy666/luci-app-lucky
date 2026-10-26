@@ -5,13 +5,13 @@ include $(INCLUDE_DIR)/version.mk
 
 PKG_NAME:=luci-app-lucky
 PKG_VERSION:=3.0.0
-PKG_RELEASE:=29
+PKG_RELEASE:=30
 LUCKY_ASSET_VERSION:=$(subst .,_,$(PKG_VERSION))-$(PKG_RELEASE)
 LUCKY_VIEW_NAME:=config-$(LUCKY_ASSET_VERSION)
 
 LUCI_TITLE:=LuCI support for Lucky
 LUCI_DESCRIPTION:=Manage the Lucky service and its basic web settings.
-LUCI_DEPENDS:=+lucky +rpcd-mod-file +lua +luci-lib-nixio +luci-lib-jsonc +luci-lib-ip
+LUCI_DEPENDS:=+lucky +rpcd-mod-file +lua +libubus-lua +libuci-lua +luci-lib-nixio +luci-lib-jsonc +luci-lib-ip
 LUCI_PKGARCH:=all
 
 # Keep Windows checkout permissions out of the installed package.
@@ -20,6 +20,7 @@ define LuckyPrepareFiles
 	find $(PKG_BUILD_DIR)/root $(PKG_BUILD_DIR)/htdocs -type f -exec chmod 0644 {} +
 	chmod 0755 $(PKG_BUILD_DIR)/root/usr/libexec/lucky-backup
 	chmod 0755 $(PKG_BUILD_DIR)/root/usr/libexec/lucky-diagnostics
+	chmod 0755 $(PKG_BUILD_DIR)/root/usr/libexec/lucky-luci-refresh
 	# Version every asset: old LuCI/uhttpd may retain CSS and adapter scripts
 	# independently of the main view, including when a query string is reused.
 	for asset in config.js config.css legacy.js legacy.css; do \
@@ -47,9 +48,7 @@ endif
 define Package/luci-app-lucky/postinst
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
-	rm -f /tmp/luci-indexcache /tmp/luci-indexcache.*
-	rm -rf /tmp/luci-modulecache/
-	/etc/init.d/rpcd reload 2>/dev/null || true
+	/usr/libexec/lucky-luci-refresh
 fi
 exit 0
 endef
