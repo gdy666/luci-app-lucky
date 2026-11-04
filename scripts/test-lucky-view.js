@@ -185,9 +185,27 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	assert.equal(failed.nodes['lucky-port'].disabled, true);
 	assert.equal(failed.nodes['lucky-save-port'].disabled, true);
 	assert.equal(failed.nodes['lucky-admin-link'].href, undefined);
-	assert.match(failed.nodes['lucky-install'].textContent, /Permission denied/);
+	assert.equal(failed.nodes['lucky-install'].textContent, 'Installed');
+	assert.match(failed.nodes['lucky-query-error'].textContent, /Permission denied/);
 	assert.equal(failed.nodes['lucky-refresh'].disabled, false, 'allow retry after failure');
 	assert.equal(failed.nodes['lucky-core-upload'].disabled, false, 'failed binary query must release upload');
+
+	const linked = fixture();
+	await linked.view.render();
+	const denied = { ok: false, error: 'Unsafe core parent directory: /usr/bin' };
+	const first = linked.timers[0]();
+	reply(linked, 'status', 'true'); reply(linked, 'arch', 'armv7'); await flush();
+	reply(linked, 'core-base', denied); await flush(); reply(linked, 'core-info', denied); await first;
+	assert.equal(linked.nodes['lucky-install'].textContent, 'Installed');
+	assert.equal(linked.nodes['lucky-running'].textContent, 'Running');
+	assert.equal(linked.nodes['lucky-version'].textContent, '-');
+	assert.ok(linked.nodes['lucky-query-error'].textContent.includes(denied.error));
+	linked.context.cachedInfo = { Version: '3.7.1', Date: 'test-build' };
+	linked.context.cachedBase = { BaseConfigure: { AdminWebListenPort: 16601 } };
+	const retryLinked = linked.nodes['lucky-refresh'].click();
+	reply(linked, 'status', 'true'); reply(linked, 'arch', 'armv7'); await retryLinked;
+	assert.equal(linked.nodes['lucky-version'].textContent, '3.7.1');
+	assert.equal(linked.nodes['lucky-query-error'].textContent, '');
 
 	for (const [response, message] of [
 		[6, 'Permission denied'],
@@ -549,7 +567,8 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 	reply(errorInfo, 'core-base', {BaseConfigure:{}}); await flush();
 	reply(errorInfo, 'core-info', {ok:false,error:'Core changed during version query'}); await badInfoLoad;
 	assert.equal(errorInfo.nodes['lucky-version'].textContent, '-');
-	assert.match(errorInfo.nodes['lucky-install'].textContent, /Core changed during version query/);
+	assert.equal(errorInfo.nodes['lucky-install'].textContent, 'Installed');
+	assert.match(errorInfo.nodes['lucky-query-error'].textContent, /Core changed during version query/);
 	console.log('PASS: cached versions appear immediately and survive refresh; cache misses serialize and report backend errors');
 	for (const [version, online] of [
 		['2.27.2', false], ['3.3.99', false], ['3.4.0', true],
@@ -702,7 +721,8 @@ const watchdog = setTimeout(() => { console.error('FAIL: unresolved RPC in front
 		assert.equal(low.nodes['lucky-running'].textContent, running ? 'Running' : 'Stopped');
 		assert.equal(low.nodes['lucky-service-start'].disabled, running, 'a skipped query must not block starting a stopped core');
 		assert.equal(low.nodes['lucky-backup'].disabled, false, 'backup must remain available without querying the binary');
-		assert.match(low.nodes['lucky-install'].textContent, /Not enough available memory/);
+		assert.equal(low.nodes['lucky-install'].textContent, 'Installed');
+		assert.match(low.nodes['lucky-query-error'].textContent, /Not enough available memory/);
 		assert.equal(low.nodes['lucky-refresh'].disabled, false);
 		assert.equal(low.nodes['lucky-diagnostics-refresh'].disabled, false);
 		const logs = low.nodes['lucky-diagnostics-refresh'].click();

@@ -58,7 +58,7 @@ originals = {}
 
 
 def call(operation='core-info', memory=None, fail_write=False, fixed_stat=False, config_setter=False,
-         invalidate_race=False):
+         invalidate_race=False, bin_parent=None):
     env = '' if memory is None else 'LUCKY_TEST_MEMORY=' + str(memory) + ' '
     if fail_write:
         env += 'LUCKY_TEST_WRITE_FAIL=1 '
@@ -68,6 +68,8 @@ def call(operation='core-info', memory=None, fail_write=False, fixed_stat=False,
         env += 'LUCKY_TEST_SETTER=' + shlex.quote(setter) + ' '
     if invalidate_race:
         env += 'LUCKY_TEST_INVALIDATE_RACE=' + shlex.quote(base_cache) + ' '
+    if bin_parent:
+        env += 'LUCKY_TEST_BIN_PARENT=' + shlex.quote(bin_parent) + ' '
     words = [operation] if isinstance(operation, str) else operation
     return json.loads(command(env + 'lua ' + shlex.quote(driver) + ' ' + ' '.join(map(shlex.quote, words))))
 
@@ -123,6 +125,13 @@ assert(replace(c.status, "base_directory", function()
 end))
 local memory = tonumber(os.getenv("LUCKY_TEST_MEMORY"))
 if memory then assert(replace(c.info, "available_memory", function() return memory end)) end
+local parent = os.getenv("LUCKY_TEST_BIN_PARENT")
+if parent then
+ local fs = require "nixio.fs"
+ local lstat, readlink = fs.lstat, fs.readlink
+ fs.lstat = function(path) return lstat(path == "/usr/bin" and parent or path) end
+ fs.readlink = function(path) return readlink(path == "/usr/bin" and parent or path) end
+end
 local invalidation = os.getenv("LUCKY_TEST_INVALIDATE_RACE")
 if invalidation then
  local fs = require "nixio.fs"; local unlink = fs.unlink
@@ -172,6 +181,17 @@ else dofile("/usr/libexec/lucky-backup") end
         assert call('core-status')['info']['Date'] == 'test-build'
     assert executions() == 1
     print('PASS: cold query runs once; repeated queries/status reads reuse a private JSON cache', flush=True)
+
+    parent = work + '/linked-bin'
+    command('ln -s ../usr/./.. ' + shlex.quote(parent))
+    assert call(bin_parent=parent)['Version'] == '3.2.3'
+    assert 'Unsafe core parent directory' in call('core-fix', bin_parent=parent)['error']
+    for target in ('/tmp/../usr', '/usr/bin'):
+        command('ln -snf ' + shlex.quote(target) + ' ' + shlex.quote(parent))
+        for op in ('core-info', 'core-base'):
+            assert 'Unsafe core parent directory' in call(op, bin_parent=parent)['error']
+    assert executions() == 1
+    print('PASS: trusted directory links allow inspection only; writable ancestors and link loops are rejected', flush=True)
 
     n = executions()
     command('touch -m -t 202001010101 ' + binary)
